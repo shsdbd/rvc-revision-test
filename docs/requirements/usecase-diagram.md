@@ -8,7 +8,8 @@
 flowchart LR
     User[사용자]
     FrontSensor[전방 센서 하드웨어]
-    SideSensor[측면 센서 하드웨어]
+    %%[수정]%%
+    LeftSensor[왼쪽 센서 하드웨어] %% 수정 전 : SideSensor[측면 센서 하드웨어]%%
     DustSensor[먼지 센서 하드웨어]
     MoveMotor[Movement Motor]
     CleanMotor[Cleaning Motor]
@@ -24,9 +25,9 @@ flowchart LR
     User --> UC1
     User --> UC2
     FrontSensor --> UC3
-    SideSensor --> UC3
+    LeftSensor --> UC3
     FrontSensor --> UC4
-    SideSensor --> UC4
+    LeftSensor --> UC4
     DustSensor --> UC5
     UC1 --> MoveMotor
     UC1 --> CleanMotor
@@ -36,5 +37,5 @@ flowchart LR
     UC4 --> MoveMotor
     UC5 --> CleanMotor
 
-    UC3 -. 전방/좌측/우측 모두 감지 .-> UC4
+    UC3 -. 기존 전방/좌측/우측 모두 감지 조건은\n 오른쪽 센서 제거로 대체 조건 필요 .-> UC4 %%수정 전 : 전방/좌측/우측 모두 감지
 ```
