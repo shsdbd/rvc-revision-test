@@ -10,6 +10,8 @@ flowchart LR
     FrontSensor[전방 센서 하드웨어]
     %%[수정]%%
     LeftSensor[왼쪽 센서 하드웨어] %% 수정 전 : SideSensor[측면 센서 하드웨어]%%
+    %%[추가] 우측 장애물 정보는 controller 판단 입력이 아니라 검증 관찰 데이터로만 보존한다.%%
+    RightObservation[우측 장애물 정보<br/>검증 관찰 데이터]
     DustSensor[먼지 센서 하드웨어]
     MoveMotor[Movement Motor]
     CleanMotor[Cleaning Motor]
@@ -18,7 +20,7 @@ flowchart LR
         UC1((UC-001<br/>자동 진공 청소 시작))
         UC2((UC-002<br/>자동 진공 청소 종료))
         UC3((UC-003<br/>전방 장애물 회피))
-        UC4((UC-004<br/>삼방향 장애물 탈출))
+        UC4((UC-004<br/>삼방향 장애물 처리))
         UC5((UC-005<br/>먼지 감지에 따른 흡입 강화))
     end
 
@@ -28,6 +30,7 @@ flowchart LR
     LeftSensor --> UC3
     FrontSensor --> UC4
     LeftSensor --> UC4
+    RightObservation -. controller 판단 입력 아님 .-> UC4
     DustSensor --> UC5
     UC1 --> MoveMotor
     UC1 --> CleanMotor
@@ -37,5 +40,5 @@ flowchart LR
     UC4 --> MoveMotor
     UC5 --> CleanMotor
 
-    UC3 -. 기존 전방/좌측/우측 모두 감지 조건은\n 오른쪽 센서 제거로 대체 조건 필요 .-> UC4 %%수정 전 : 전방/좌측/우측 모두 감지
+    UC3 -. 새로운 회피전략으로\n기존 삼방향 장애물 시나리오 처리 .-> UC4 %%수정 전 : 전방/좌측/우측 모두 감지
 ```
