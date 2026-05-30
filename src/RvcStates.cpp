@@ -12,8 +12,7 @@ public:
         context.frontSensor().registerInterruptHandler([&context]() {
             context.onFrontObstacleDetected();
         });
-        context.cleaningManager().start();
-        context.movementManager().moveForward();
+        context.startForwardCleaning();
         context.changeState(makeForwardState());
     }
 
@@ -29,13 +28,8 @@ public:
     }
 
     void onFrontObstacleDetected(RvcController& context) override {
-        context.movementManager().stop();
-        context.cleaningManager().onMovementStateChanged(MovementState::StoppedForObstacle);
+        context.stopMovementAndCleaning();
         context.changeState(makeStoppedForObstacleState());
-    }
-
-    void onDustDetected(RvcController& context) override {
-        context.cleaningManager().onDustDetected(MovementState::Forward);
     }
 
     [[nodiscard]] MovementState movementState() const override {
@@ -46,40 +40,28 @@ public:
 class StoppedForObstacleState final : public IRvcState {
 public:
     void onEnter(RvcController& context) override {
-        sideSnapshot_ = context.sideSensor().read();
+        const bool leftDetected = context.sideSensor().readLeft();
         const AvoidanceAction action =
-            context.avoidanceStrategy().decideOnFrontObstacle(sideSnapshot_);
+            context.avoidanceStrategy().decideAfterFrontObstacle(leftDetected);
 
-        if (action == AvoidanceAction::MoveBackward) {
-            context.movementManager().moveBackward();
-            context.cleaningManager().onMovementStateChanged(MovementState::Backward);
-            context.changeState(makeBackwardState(sideSnapshot_));
+        if (action == AvoidanceAction::CheckRightPath) {
+            context.changeState(makeRightPathCheckState());
             return;
         }
 
-        if (action == AvoidanceAction::TurnRight) {
-            context.movementManager().turnRight();
-            context.cleaningManager().onMovementStateChanged(MovementState::TurningRight);
-            context.changeState(makeTurningState(AvoidanceAction::TurnRight));
-            return;
-        }
-
-        context.movementManager().turnLeft();
-        context.cleaningManager().onMovementStateChanged(MovementState::TurningLeft);
         context.changeState(makeTurningState(AvoidanceAction::TurnLeft));
     }
 
     [[nodiscard]] MovementState movementState() const override {
         return MovementState::StoppedForObstacle;
     }
-
-private:
-    SideObstacleSnapshot sideSnapshot_{};
 };
 
 class TurningState final : public IRvcState {
 public:
-    explicit TurningState(AvoidanceAction turnAction) : turnAction_{turnAction} {
+    void onEnter(RvcController& context) override {
+        context.cleaningManager().onMovementStateChanged(movementState());
+        context.movementManager().turnLeft();
     }
 
     void tick(RvcController& context) override {
@@ -87,53 +69,85 @@ public:
             return;
         }
 
-        context.movementManager().moveForward();
+        context.startForwardCleaning();
         context.changeState(makeForwardState());
     }
 
     [[nodiscard]] MovementState movementState() const override {
-        return turnAction_ == AvoidanceAction::TurnRight ? MovementState::TurningRight
-                                                         : MovementState::TurningLeft;
+        return MovementState::TurningLeft;
+    }
+};
+
+class RightPathCheckState final : public IRvcState {
+public:
+    void onEnter(RvcController& context) override {
+        context.cleaningManager().onMovementStateChanged(MovementState::TurningRight);
+        context.movementManager().turnRight();
     }
 
-private:
-    AvoidanceAction turnAction_;
+    void tick(RvcController& context) override {
+        if (!context.movementManager().isTurnComplete()) {
+            return;
+        }
+
+        if (context.frontSensor().isObstacleDetected()) {
+            context.changeState(makeReturnFromRightCheckState());
+            return;
+        }
+
+        context.startForwardCleaning();
+        context.changeState(makeForwardState());
+    }
+
+    [[nodiscard]] MovementState movementState() const override {
+        return MovementState::TurningRight;
+    }
+};
+
+class ReturnFromRightCheckState final : public IRvcState {
+public:
+    void onEnter(RvcController& context) override {
+        context.cleaningManager().onMovementStateChanged(MovementState::TurningLeft);
+        context.movementManager().turnLeft();
+    }
+
+    void tick(RvcController& context) override {
+        if (!context.movementManager().isTurnComplete()) {
+            return;
+        }
+
+        context.changeState(makeBackwardState());
+    }
+
+    [[nodiscard]] MovementState movementState() const override {
+        return MovementState::TurningLeft;
+    }
 };
 
 class BackwardState final : public IRvcState {
 public:
-    explicit BackwardState(SideObstacleSnapshot initialSnapshot)
-        : previousSideSnapshot_{initialSnapshot} {
+    void onEnter(RvcController& context) override {
+        context.cleaningManager().onMovementStateChanged(MovementState::Backward);
+        context.movementManager().moveBackward();
     }
 
     void tick(RvcController& context) override {
-        const SideObstacleSnapshot currentSideSnapshot = context.sideSensor().read();
-        const AvoidanceAction action = context.avoidanceStrategy().decideWhileBackward(
-            previousSideSnapshot_, currentSideSnapshot);
-        previousSideSnapshot_ = currentSideSnapshot;
+        context.stopMovementAndCleaning();
+        const bool leftDetected = context.sideSensor().readLeft();
+        const AvoidanceAction action =
+            context.avoidanceStrategy().decideAfterBackwardTick(leftDetected);
 
-        if (action == AvoidanceAction::KeepBackward) {
+        if (action == AvoidanceAction::CheckRightPath) {
+            context.changeState(makeRightPathCheckState());
             return;
         }
 
-        if (action == AvoidanceAction::TurnRight) {
-            context.movementManager().turnRight();
-            context.cleaningManager().onMovementStateChanged(MovementState::TurningRight);
-            context.changeState(makeTurningState(AvoidanceAction::TurnRight));
-            return;
-        }
-
-        context.movementManager().turnLeft();
-        context.cleaningManager().onMovementStateChanged(MovementState::TurningLeft);
         context.changeState(makeTurningState(AvoidanceAction::TurnLeft));
     }
 
     [[nodiscard]] MovementState movementState() const override {
         return MovementState::Backward;
     }
-
-private:
-    SideObstacleSnapshot previousSideSnapshot_;
 };
 
 } // namespace
@@ -150,12 +164,20 @@ std::unique_ptr<IRvcState> makeStoppedForObstacleState() {
     return std::make_unique<StoppedForObstacleState>();
 }
 
-std::unique_ptr<IRvcState> makeTurningState(AvoidanceAction turnAction) {
-    return std::make_unique<TurningState>(turnAction);
+std::unique_ptr<IRvcState> makeTurningState(AvoidanceAction) {
+    return std::make_unique<TurningState>();
 }
 
-std::unique_ptr<IRvcState> makeBackwardState(SideObstacleSnapshot initialSnapshot) {
-    return std::make_unique<BackwardState>(initialSnapshot);
+std::unique_ptr<IRvcState> makeRightPathCheckState() {
+    return std::make_unique<RightPathCheckState>();
+}
+
+std::unique_ptr<IRvcState> makeReturnFromRightCheckState() {
+    return std::make_unique<ReturnFromRightCheckState>();
+}
+
+std::unique_ptr<IRvcState> makeBackwardState() {
+    return std::make_unique<BackwardState>();
 }
 
 } // namespace rvc

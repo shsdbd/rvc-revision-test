@@ -16,7 +16,6 @@ CleaningManager::CleaningManager(ICleaner& cleaner, Timer::ClockFn clockFn)
 }
 
 void CleaningManager::start() {
-    pendingPowerUp_ = false;
     enterNormal();
 }
 
@@ -25,15 +24,7 @@ void CleaningManager::startCleaning() {
 }
 
 void CleaningManager::stop() {
-    pendingPowerUp_ = false;
-    powerUpTimer_->reset();
-    currentState_ = CleaningState::Off;
-    powerLevel_ = PowerLevel::OFF;
-    if (cleaningMotor_ != nullptr) {
-        cleaningMotor_->off();
-        return;
-    }
-    cleaner_->setPower(PowerLevel::OFF);
+    enterOff();
 }
 
 void CleaningManager::stopCleaning() {
@@ -46,9 +37,6 @@ void CleaningManager::powerUp() {
 
 void CleaningManager::handleDustDetected(bool detected) {
     latestDustDetected_ = detected;
-    if (detected) {
-        enterPowerUp();
-    }
 }
 
 void CleaningManager::update() {
@@ -61,38 +49,45 @@ void CleaningManager::onDustDetected(MovementState movementState) {
     }
 
     if (movementState == MovementState::Forward) {
-        pendingPowerUp_ = false;
         enterPowerUp();
         return;
     }
 
-    pendingPowerUp_ = true;
-    enterNormal();
+    enterOff();
 }
 
 void CleaningManager::onMovementStateChanged(MovementState movementState) {
-    if (currentState_ == CleaningState::Off) {
-        return;
-    }
-
     if (movementState != MovementState::Forward) {
-        enterNormal();
+        enterOff();
         return;
     }
 
-    if (pendingPowerUp_) {
-        pendingPowerUp_ = false;
-        enterPowerUp();
+    if (currentState_ == CleaningState::Off) {
+        enterNormal();
     }
 }
 
 void CleaningManager::tick() {
-    if (currentState_ != CleaningState::PowerUp || !powerUpTimer_->expired()) {
+    tick(MovementState::Forward);
+}
+
+void CleaningManager::tick(MovementState movementState) {
+    if (movementState != MovementState::Forward) {
+        enterOff();
         return;
     }
 
     const bool dustDetected =
         dustSensor_ != nullptr ? dustSensor_->isDustDetected() : latestDustDetected_;
+    if (dustDetected && currentState_ != CleaningState::PowerUp) {
+        enterPowerUp();
+        return;
+    }
+
+    if (currentState_ != CleaningState::PowerUp || !powerUpTimer_->expired()) {
+        return;
+    }
+
     if (dustDetected) {
         powerUpTimer_->start(powerUpDuration_);
         return;
@@ -113,8 +108,15 @@ bool CleaningManager::getLatestDustDetected() const {
     return latestDustDetected_;
 }
 
-bool CleaningManager::pendingPowerUp() const {
-    return pendingPowerUp_;
+void CleaningManager::enterOff() {
+    powerUpTimer_->reset();
+    currentState_ = CleaningState::Off;
+    powerLevel_ = PowerLevel::OFF;
+    if (cleaningMotor_ != nullptr) {
+        cleaningMotor_->off();
+        return;
+    }
+    cleaner_->setPower(PowerLevel::OFF);
 }
 
 void CleaningManager::enterNormal() {

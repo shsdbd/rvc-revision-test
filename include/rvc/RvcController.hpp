@@ -37,6 +37,8 @@ public:
 
     void changeState(std::unique_ptr<IRvcState> nextState);
     void performStop();
+    void stopMovementAndCleaning();
+    void startForwardCleaning();
 
     [[nodiscard]] MovementState movementState() const;
 
@@ -66,6 +68,8 @@ std::unique_ptr<IRvcState> makeOffState();
 std::unique_ptr<IRvcState> makeForwardState();
 std::unique_ptr<IRvcState> makeStoppedForObstacleState();
 std::unique_ptr<IRvcState> makeTurningState(AvoidanceAction turnAction);
-std::unique_ptr<IRvcState> makeBackwardState(SideObstacleSnapshot initialSnapshot);
+std::unique_ptr<IRvcState> makeRightPathCheckState();
+std::unique_ptr<IRvcState> makeReturnFromRightCheckState();
+std::unique_ptr<IRvcState> makeBackwardState();
 
 } // namespace rvc

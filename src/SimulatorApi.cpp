@@ -5,17 +5,14 @@
 namespace rvc {
 
 Direction DefaultAvoidStrategy::decideDirection(bool front, bool left, bool right) {
-    const LeftPriorityAvoidanceStrategy strategy;
-    const AvoidanceAction action =
-        strategy.decideOnFrontObstacle({.leftDetected = left, .rightDetected = right});
-    if (front && action == AvoidanceAction::TurnRight) {
-        return Direction::RIGHT;
-    }
-    if (front && action == AvoidanceAction::MoveBackward) {
+    if (front && left && right) {
         return Direction::BACKWARD;
     }
-    if (front) {
+    if (front && !left) {
         return Direction::LEFT;
+    }
+    if (front) {
+        return Direction::RIGHT;
     }
     return Direction::FORWARD;
 }
@@ -81,9 +78,7 @@ void RVCController::onDustDetected(bool detected) {
     if (error_) {
         return;
     }
-    if (detected) {
-        core_.onDustDetected();
-    }
+    cleaningManager_.handleDustDetected(detected);
 }
 
 MovementState RVCController::movementState() const {

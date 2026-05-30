@@ -15,8 +15,7 @@ void IRvcState::stopCleaning(RvcController& context) {
 void IRvcState::onFrontObstacleDetected(RvcController&) {
 }
 
-void IRvcState::onDustDetected(RvcController& context) {
-    context.cleaningManager().onDustDetected(movementState());
+void IRvcState::onDustDetected(RvcController&) {
 }
 
 void IRvcState::tick(RvcController&) {
@@ -61,7 +60,7 @@ void RvcController::tick() {
     currentState_->tick(*this);
     enteringState_ = false;
     enterPendingStateIfNeeded();
-    cleaningManager_.tick();
+    cleaningManager_.tick(currentState_->movementState());
 }
 
 void RvcController::changeState(std::unique_ptr<IRvcState> nextState) {
@@ -95,12 +94,21 @@ void RvcController::enterPendingStateIfNeeded() {
 }
 
 void RvcController::performStop() {
-    movementManager_.stop();
-    cleaningManager_.stop();
+    stopMovementAndCleaning();
     frontSensor_.shutdown();
     sideSensor_.shutdown();
     dustSensor_.shutdown();
     currentState_ = makeOffState();
+}
+
+void RvcController::stopMovementAndCleaning() {
+    movementManager_.stop();
+    cleaningManager_.stop();
+}
+
+void RvcController::startForwardCleaning() {
+    cleaningManager_.onMovementStateChanged(MovementState::Forward);
+    movementManager_.moveForward();
 }
 
 MovementState RvcController::movementState() const {
