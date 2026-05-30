@@ -135,45 +135,18 @@ TEST(TimerTest, ResetBeforeExpirationPreventsCallback) {
     EXPECT_EQ(callbackCount, 0);
 }
 
-TEST(LeftPriorityAvoidanceStrategyTest, DecidesTurnDirectionAndBackwardMovement) {
+TEST(LeftPriorityAvoidanceStrategyTest, UsesLeftPollingToChooseLeftTurnOrRightPathCheck) {
     const LeftPriorityAvoidanceStrategy strategy;
 
-    EXPECT_EQ(strategy.decideOnFrontObstacle({false, false}), AvoidanceAction::TurnLeft);
-    EXPECT_EQ(strategy.decideOnFrontObstacle({true, false}), AvoidanceAction::TurnRight);
-    EXPECT_EQ(strategy.decideOnFrontObstacle({false, true}), AvoidanceAction::TurnLeft);
-    EXPECT_EQ(strategy.decideOnFrontObstacle({true, true}), AvoidanceAction::MoveBackward);
+    EXPECT_EQ(strategy.decideAfterFrontObstacle(false), AvoidanceAction::TurnLeft);
+    EXPECT_EQ(strategy.decideAfterFrontObstacle(true), AvoidanceAction::CheckRightPath);
 }
 
-TEST(LeftPriorityAvoidanceStrategyTest, DecidesDirectionWhileBackward) {
+TEST(LeftPriorityAvoidanceStrategyTest, UsesLeftPollingAfterBackwardTick) {
     const LeftPriorityAvoidanceStrategy strategy;
 
-    EXPECT_EQ(strategy.decideWhileBackward({true, true}, {false, true}), AvoidanceAction::TurnLeft);
-    EXPECT_EQ(strategy.decideWhileBackward({true, true}, {true, false}),
-              AvoidanceAction::TurnRight);
-    EXPECT_EQ(strategy.decideWhileBackward({true, true}, {false, false}),
-              AvoidanceAction::TurnLeft);
-    EXPECT_EQ(strategy.decideWhileBackward({true, true}, {true, true}),
-              AvoidanceAction::KeepBackward);
-}
-
-TEST(LeftPriorityAvoidanceStrategyTest, TurnsLeftWhenOnlyRightObstacleExists) {
-    const LeftPriorityAvoidanceStrategy strategy;
-
-    EXPECT_EQ(strategy.decideOnFrontObstacle({false, true}), AvoidanceAction::TurnLeft);
-}
-
-TEST(LeftPriorityAvoidanceStrategyTest, LeftClearHasPriorityWhileBackward) {
-    const LeftPriorityAvoidanceStrategy strategy;
-
-    EXPECT_EQ(strategy.decideWhileBackward({true, true}, {false, false}),
-              AvoidanceAction::TurnLeft);
-}
-
-TEST(LeftPriorityAvoidanceStrategyTest, KeepsBackwardWhenNoSideWasPreviouslyBlocked) {
-    const LeftPriorityAvoidanceStrategy strategy;
-
-    EXPECT_EQ(strategy.decideWhileBackward({false, false}, {false, false}),
-              AvoidanceAction::KeepBackward);
+    EXPECT_EQ(strategy.decideAfterBackwardTick(false), AvoidanceAction::TurnLeft);
+    EXPECT_EQ(strategy.decideAfterBackwardTick(true), AvoidanceAction::CheckRightPath);
 }
 
 TEST(DefaultAvoidStrategyTest, NeedsReverseRequiresFrontLeftAndRightTogether) {
@@ -224,7 +197,7 @@ TEST(CleaningManagerTest, ExtendsPowerUpWhenDustIsStillDetected) {
     EXPECT_EQ(cleaningMotor.lastState(), CleaningState::Normal);
 }
 
-TEST(CleaningManagerTest, DefersPowerUpWhenDustIsDetectedDuringAvoidance) {
+TEST(CleaningManagerTest, DoesNotDeferPowerUpWhenDustIsDetectedDuringAvoidance) {
     FakeCleaningMotor cleaningMotor;
     FakeDustSensor dustSensor;
     FakeTimer powerTimer;
@@ -232,12 +205,11 @@ TEST(CleaningManagerTest, DefersPowerUpWhenDustIsDetectedDuringAvoidance) {
 
     manager.start();
     manager.onDustDetected(MovementState::Backward);
-    EXPECT_EQ(manager.currentState(), CleaningState::Normal);
-    EXPECT_TRUE(manager.pendingPowerUp());
+    EXPECT_EQ(manager.currentState(), CleaningState::Off);
+    EXPECT_EQ(cleaningMotor.lastState(), CleaningState::Off);
 
     manager.onMovementStateChanged(MovementState::Forward);
-    EXPECT_EQ(manager.currentState(), CleaningState::PowerUp);
-    EXPECT_FALSE(manager.pendingPowerUp());
+    EXPECT_EQ(manager.currentState(), CleaningState::Normal);
 }
 
 TEST(CleaningManagerTest, LegacyCleanerPathTracksDustAndPowerTransitions) {
@@ -258,6 +230,7 @@ TEST(CleaningManagerTest, LegacyCleanerPathTracksDustAndPowerTransitions) {
 
     manager.handleDustDetected(true);
     EXPECT_TRUE(manager.getLatestDustDetected());
+    manager.tick(MovementState::Forward);
     EXPECT_EQ(manager.currentState(), CleaningState::PowerUp);
     EXPECT_EQ(manager.getPowerLevel(), PowerLevel::POWER_UP);
 
@@ -269,7 +242,7 @@ TEST(CleaningManagerTest, LegacyCleanerPathTracksDustAndPowerTransitions) {
     manager.handleDustDetected(false);
     now = 6000;
     EXPECT_EQ(now, 6000);
-    manager.update();
+    manager.tick(MovementState::Forward);
     EXPECT_EQ(manager.currentState(), CleaningState::Normal);
 
     manager.powerUp();
@@ -290,11 +263,10 @@ TEST(CleaningManagerTest, IgnoresDustWhileOff) {
     manager.onDustDetected(MovementState::Forward);
 
     EXPECT_EQ(manager.currentState(), CleaningState::Off);
-    EXPECT_FALSE(manager.pendingPowerUp());
     EXPECT_TRUE(cleaningMotor.states.empty());
 }
 
-TEST(CleaningManagerTest, AvoidanceMovementForcesNormalFromPowerUp) {
+TEST(CleaningManagerTest, AvoidanceMovementForcesOffFromPowerUp) {
     FakeCleaningMotor cleaningMotor;
     FakeDustSensor dustSensor;
     FakeTimer powerTimer;
@@ -305,8 +277,8 @@ TEST(CleaningManagerTest, AvoidanceMovementForcesNormalFromPowerUp) {
     EXPECT_EQ(manager.currentState(), CleaningState::PowerUp);
 
     manager.onMovementStateChanged(MovementState::TurningLeft);
-    EXPECT_EQ(manager.currentState(), CleaningState::Normal);
-    EXPECT_EQ(cleaningMotor.lastState(), CleaningState::Normal);
+    EXPECT_EQ(manager.currentState(), CleaningState::Off);
+    EXPECT_EQ(cleaningMotor.lastState(), CleaningState::Off);
 }
 
 TEST(CleaningManagerTest, ForwardMovementWithoutPendingPowerUpRemainsNormal) {
@@ -319,23 +291,22 @@ TEST(CleaningManagerTest, ForwardMovementWithoutPendingPowerUpRemainsNormal) {
     manager.onMovementStateChanged(MovementState::Forward);
 
     EXPECT_EQ(manager.currentState(), CleaningState::Normal);
-    EXPECT_FALSE(manager.pendingPowerUp());
 }
 
-TEST(CleaningManagerTest, TickWhileNormalDoesNotPollDustSensor) {
+TEST(CleaningManagerTest, TickWhileForwardPollsDustSensor) {
     FakeCleaningMotor cleaningMotor;
     FakeDustSensor dustSensor;
     FakeTimer powerTimer;
     CleaningManager manager{cleaningMotor, dustSensor, powerTimer};
 
     manager.start();
-    manager.tick();
+    manager.tick(MovementState::Forward);
 
-    EXPECT_EQ(dustSensor.readCount, 0);
+    EXPECT_EQ(dustSensor.readCount, 1);
     EXPECT_EQ(manager.currentState(), CleaningState::Normal);
 }
 
-TEST(CleaningManagerTest, StopClearsPendingPowerUp) {
+TEST(CleaningManagerTest, NonForwardTickKeepsCleaningOffWithoutPendingPowerUp) {
     FakeCleaningMotor cleaningMotor;
     FakeDustSensor dustSensor;
     FakeTimer powerTimer;
@@ -343,12 +314,11 @@ TEST(CleaningManagerTest, StopClearsPendingPowerUp) {
 
     manager.start();
     manager.onDustDetected(MovementState::Backward);
-    EXPECT_TRUE(manager.pendingPowerUp());
+    EXPECT_EQ(manager.currentState(), CleaningState::Off);
 
-    manager.stop();
-    manager.onMovementStateChanged(MovementState::Forward);
+    dustSensor.setDustDetected(true);
+    manager.tick(MovementState::Backward);
 
-    EXPECT_FALSE(manager.pendingPowerUp());
     EXPECT_EQ(manager.currentState(), CleaningState::Off);
     EXPECT_EQ(cleaningMotor.lastState(), CleaningState::Off);
 }
@@ -478,9 +448,7 @@ TEST(LegacyAdaptersTest, TranslateCombinedSensorAndMotorInterfaces) {
     frontAdapter.triggerInterrupt();
     EXPECT_TRUE(interruptHandled);
 
-    const SideObstacleSnapshot snapshot = sideAdapter.read();
-    EXPECT_TRUE(snapshot.leftDetected);
-    EXPECT_FALSE(snapshot.rightDetected);
+    EXPECT_TRUE(sideAdapter.readLeft());
     EXPECT_EQ(obstacleSensor.initializeCount, 2);
 
     FakeSimulatorMotor motor;
@@ -523,19 +491,18 @@ TEST(LegacyAdaptersTest, FrontAdapterTriggerWithoutHandlerIsSafe) {
     EXPECT_EQ(obstacleSensor.initializeCount, 0);
 }
 
-TEST(LegacyAdaptersTest, SideAdapterReadsBothSideValues) {
+TEST(LegacyAdaptersTest, SideAdapterReadsOnlyLeftValue) {
     FakeObstacleSensor obstacleSensor;
     obstacleSensor.leftDetected = true;
     obstacleSensor.rightDetected = true;
     CombinedSideObstacleSensorAdapter sideAdapter{obstacleSensor};
 
-    const SideObstacleSnapshot snapshot = sideAdapter.read();
+    const bool leftDetected = sideAdapter.readLeft();
     sideAdapter.shutdown();
 
-    EXPECT_TRUE(snapshot.leftDetected);
-    EXPECT_TRUE(snapshot.rightDetected);
+    EXPECT_TRUE(leftDetected);
     EXPECT_EQ(obstacleSensor.leftReadCount, 1);
-    EXPECT_EQ(obstacleSensor.rightReadCount, 1);
+    EXPECT_EQ(obstacleSensor.rightReadCount, 0);
 }
 
 TEST(LegacyAdaptersTest, AdapterInitializePropagatesSensorFailure) {
@@ -761,7 +728,7 @@ TEST(RvcControllerTest, FrontObstacleIsIgnoredWhileOff) {
     EXPECT_EQ(sideSensor.readCount, 0);
 }
 
-TEST(RvcControllerTest, DustWhileForwardImmediatelyPowersUpCleaning) {
+TEST(RvcControllerTest, DustPollingWhileForwardPowersUpCleaning) {
     FakeFrontObstacleSensor frontSensor;
     FakeSideObstacleSensor sideSensor;
     FakeDustSensor dustSensor;
@@ -775,7 +742,8 @@ TEST(RvcControllerTest, DustWhileForwardImmediatelyPowersUpCleaning) {
     RvcController controller{frontSensor, sideSensor, dustSensor, movement, cleaning, strategy};
 
     controller.startCleaning();
-    controller.onDustDetected();
+    dustSensor.setDustDetected(true);
+    controller.tick();
 
     EXPECT_EQ(controller.movementState(), MovementState::Forward);
     EXPECT_EQ(cleaning.currentState(), CleaningState::PowerUp);
@@ -796,11 +764,11 @@ TEST(RvcControllerTest, FrontObstacleOnlyTurnsLeftThenMovesForward) {
     RvcController controller{frontSensor, sideSensor, dustSensor, movement, cleaning, strategy};
 
     controller.startCleaning();
-    sideSensor.setCurrentSnapshot({false, false});
+    sideSensor.setLeftDetected(false);
     frontSensor.triggerInterrupt();
     EXPECT_EQ(controller.movementState(), MovementState::TurningLeft);
     EXPECT_EQ(movement.currentCommand(), MovementCommand::TurnLeft);
-    EXPECT_EQ(cleaning.currentState(), CleaningState::Normal);
+    EXPECT_EQ(cleaning.currentState(), CleaningState::Off);
 
     turnTimer.expire();
     controller.tick();
@@ -822,7 +790,8 @@ TEST(RvcControllerTest, FrontAndLeftObstacleTurnsRightThenMovesForward) {
     RvcController controller{frontSensor, sideSensor, dustSensor, movement, cleaning, strategy};
 
     controller.startCleaning();
-    sideSensor.setCurrentSnapshot({true, false});
+    sideSensor.setLeftDetected(true);
+    frontSensor.obstacleDetected = false;
     frontSensor.triggerInterrupt();
     EXPECT_EQ(controller.movementState(), MovementState::TurningRight);
     EXPECT_EQ(movement.currentCommand(), MovementCommand::TurnRight);
@@ -837,7 +806,7 @@ TEST(RvcControllerTest, FrontAndLeftObstacleTurnsRightThenMovesForward) {
     EXPECT_EQ(movement.currentCommand(), MovementCommand::Forward);
 }
 
-TEST(RvcControllerTest, BackwardKeepsMovingThenTurnsRightWhenRightSideClears) {
+TEST(RvcControllerTest, BlockedRightPathReturnsToOriginalDirectionThenBacksUp) {
     FakeFrontObstacleSensor frontSensor;
     FakeSideObstacleSensor sideSensor;
     FakeDustSensor dustSensor;
@@ -851,18 +820,25 @@ TEST(RvcControllerTest, BackwardKeepsMovingThenTurnsRightWhenRightSideClears) {
     RvcController controller{frontSensor, sideSensor, dustSensor, movement, cleaning, strategy};
 
     controller.startCleaning();
-    sideSensor.setCurrentSnapshot({true, true});
+    sideSensor.setLeftDetected(true);
+    frontSensor.obstacleDetected = true;
     frontSensor.triggerInterrupt();
-    EXPECT_EQ(controller.movementState(), MovementState::Backward);
+    EXPECT_EQ(controller.movementState(), MovementState::TurningRight);
 
+    turnTimer.expire();
+    controller.tick();
+    EXPECT_EQ(controller.movementState(), MovementState::TurningLeft);
+    EXPECT_EQ(movement.currentCommand(), MovementCommand::TurnLeft);
+
+    turnTimer.expire();
     controller.tick();
     EXPECT_EQ(controller.movementState(), MovementState::Backward);
     EXPECT_EQ(movement.currentCommand(), MovementCommand::Backward);
 
-    sideSensor.setCurrentSnapshot({true, false});
+    sideSensor.setLeftDetected(false);
     controller.tick();
-    EXPECT_EQ(controller.movementState(), MovementState::TurningRight);
-    EXPECT_EQ(movement.currentCommand(), MovementCommand::TurnRight);
+    EXPECT_EQ(controller.movementState(), MovementState::TurningLeft);
+    EXPECT_EQ(movement.currentCommand(), MovementCommand::TurnLeft);
 }
 
 TEST(RvcControllerTest, BaseStateDefaultsAndFactoryStatesAreSafe) {
@@ -887,10 +863,10 @@ TEST(RvcControllerTest, BaseStateDefaultsAndFactoryStatesAreSafe) {
     controller.changeState(makeStoppedForObstacleState());
     EXPECT_EQ(controller.movementState(), MovementState::TurningLeft);
 
-    controller.changeState(makeTurningState(AvoidanceAction::TurnRight));
+    controller.changeState(makeRightPathCheckState());
     EXPECT_EQ(controller.movementState(), MovementState::TurningRight);
 
-    controller.changeState(makeBackwardState({true, true}));
+    controller.changeState(makeBackwardState());
     EXPECT_EQ(controller.movementState(), MovementState::Backward);
 
     auto stoppedState = makeStoppedForObstacleState();
@@ -918,30 +894,32 @@ TEST(RvcControllerTest, MockBasedObstacleEscapeScenarioIsCoveredByUnitTestOnly) 
     controller.startCleaning();
     EXPECT_EQ(controller.movementState(), MovementState::Forward);
 
-    sideSensor.setCurrentSnapshot({true, true});
-    controller.onDustDetected();
+    sideSensor.setLeftDetected(true);
+    dustSensor.setDustDetected(true);
+    controller.tick();
     EXPECT_EQ(cleaning.currentState(), CleaningState::PowerUp);
 
+    frontSensor.obstacleDetected = true;
     frontSensor.triggerInterrupt();
+    EXPECT_EQ(controller.movementState(), MovementState::TurningRight);
+    EXPECT_EQ(cleaning.currentState(), CleaningState::Off);
+
+    turnTimer.expire();
+    controller.tick();
+    EXPECT_EQ(controller.movementState(), MovementState::TurningLeft);
+
+    turnTimer.expire();
+    controller.tick();
     EXPECT_EQ(controller.movementState(), MovementState::Backward);
-    EXPECT_EQ(movement.currentCommand(), MovementCommand::Backward);
 
-    controller.onDustDetected();
-    EXPECT_EQ(cleaning.currentState(), CleaningState::Normal);
-    EXPECT_TRUE(cleaning.pendingPowerUp());
-
-    sideSensor.setCurrentSnapshot({false, true});
+    sideSensor.setLeftDetected(false);
+    dustSensor.setDustDetected(false);
     controller.tick();
     EXPECT_EQ(controller.movementState(), MovementState::TurningLeft);
 
     turnTimer.expire();
     controller.tick();
     EXPECT_EQ(controller.movementState(), MovementState::Forward);
-    EXPECT_EQ(cleaning.currentState(), CleaningState::PowerUp);
-
-    dustSensor.setDustDetected(false);
-    powerTimer.expire();
-    controller.tick();
     EXPECT_EQ(cleaning.currentState(), CleaningState::Normal);
 }
 
@@ -1001,7 +979,8 @@ TEST(SimulatorRVCControllerAdapterTest, TickPowerOffAndNonDetectedEventsRemainSa
     EXPECT_EQ(motor.commands.size(), commandCountAfterPowerOn);
     EXPECT_EQ(cleaner.levels.size(), powerCountAfterPowerOn);
 
-    controller.onDustDetected(true);
+    dustSensor.dustDetected = true;
+    controller.tick();
     EXPECT_EQ(cleaner.lastPower(), PowerLevel::POWER_UP);
     EXPECT_EQ(controller.coreController().movementState(), MovementState::Forward);
     const RVCController& constController = controller;

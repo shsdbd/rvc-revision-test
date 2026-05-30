@@ -11,6 +11,7 @@ public:
     bool initialize() override;
     void shutdown() override;
     void registerInterruptHandler(InterruptHandler handler) override;
+    bool isObstacleDetected() override;
     void triggerInterrupt();
 
 private:
@@ -24,7 +25,7 @@ public:
 
     bool initialize() override;
     void shutdown() override;
-    SideObstacleSnapshot read() override;
+    bool readLeft() override;
 
 private:
     IObstacleSensor& sensor_;

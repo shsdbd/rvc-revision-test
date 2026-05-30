@@ -8,19 +8,14 @@ class IObstacleAvoidanceStrategy {
 public:
     virtual ~IObstacleAvoidanceStrategy() = default;
 
-    virtual AvoidanceAction
-    decideOnFrontObstacle(const SideObstacleSnapshot& sideSnapshot) const = 0;
-    virtual AvoidanceAction
-    decideWhileBackward(const SideObstacleSnapshot& previousSideSnapshot,
-                        const SideObstacleSnapshot& currentSideSnapshot) const = 0;
+    virtual AvoidanceAction decideAfterFrontObstacle(bool leftDetected) const = 0;
+    virtual AvoidanceAction decideAfterBackwardTick(bool leftDetected) const = 0;
 };
 
 class LeftPriorityAvoidanceStrategy final : public IObstacleAvoidanceStrategy {
 public:
-    AvoidanceAction decideOnFrontObstacle(const SideObstacleSnapshot& sideSnapshot) const override;
-    AvoidanceAction
-    decideWhileBackward(const SideObstacleSnapshot& previousSideSnapshot,
-                        const SideObstacleSnapshot& currentSideSnapshot) const override;
+    AvoidanceAction decideAfterFrontObstacle(bool leftDetected) const override;
+    AvoidanceAction decideAfterBackwardTick(bool leftDetected) const override;
 };
 
 } // namespace rvc
