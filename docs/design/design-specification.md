@@ -2,513 +2,555 @@
 
 ## 1. 현재 단계
 
-현재 단계는 Design이다. 본 문서는 요구사항 분석 산출물을 바탕으로 `rvc-controller`의 객체지향 설계를 정의한다.
+현재 단계는 Design (Refactoring & Update)이다. 본 문서는 승인된 Requirements 및 Analysis 산출물을 바탕으로 legacy `rvc-controller` 설계를 수정한다.
 
-## 2. 설계 범위
+본 단계에서는 코드 구현을 수행하지 않는다. 구현은 본 설계 산출물 승인 이후 Implementation 단계에서 진행한다.
 
-설계 대상은 `rvc-controller` 내부 소프트웨어 구조이다. 실제 센서 하드웨어, movement motor, cleaning motor는 외부 actor이며, controller는 추상 인터페이스를 통해서만 상호작용한다.
+## 2. 설계 범위와 바운더리
 
-## 3. 설계 목표
+설계 대상은 `rvc-controller` 내부 구조이다. 사용자, 전방 센서 하드웨어, 측면 센서 하드웨어, 먼지 센서 하드웨어, Movement Motor, Cleaning Motor는 기존과 동일하게 외부 actor로 유지한다.
 
-- 센서 입력, 제어 판단, actuator 명령을 분리한다.
-- 장애물 회피 동작을 명시적인 상태 머신으로 표현한다.
-- 이동 명령 관리와 청소 흡입 관리를 균형 있게 분리한다.
-- 실제 하드웨어 세부사항에 의존하지 않는 인터페이스를 정의한다.
-- 요구사항 ID와 설계 요소 사이의 추적성을 유지한다.
+| 항목 | 설계 결정 |
+|---|---|
+| 시스템 바운더리 | legacy와 동일하게 `rvc-controller` 내부만 설계 대상으로 둔다. |
+| simulator | 기존 simulator 및 검증 인프라는 수정하지 않는다. simulator의 우측 장애물 정보는 검증 관찰 데이터로만 사용할 수 있다. |
+| 우측 센서 | controller 내부 판단 입력과 내부 인터페이스에서 제거한다. |
+| 우측 경로 확인 | `90도 우회전 완료 후 전방 센싱`으로 대체한다. |
+| 청소 흡입 | movement가 정지/회전/후진 상태이면 cleaning motor는 OFF이다. 직진 시작 시 최소 상태는 NORMAL이다. |
 
-## 4. 주요 설계 결정
+## 3. Legacy 설계 유지 항목
 
-| ID | 결정 | 근거 |
+| Legacy 요소 | 유지 여부 | 이유 |
 |---|---|---|
-| DD-001 | `RvcController`를 최상위 조정 객체로 둔다. | 청소 시작/종료, 센서 초기화/종료, 이동/흡입 제어를 하나의 시스템 바운더리에서 조정해야 한다. |
-| DD-002 | 이동 상태와 청소 흡입 상태를 별도 manager가 관리한다. | 이동 상태 전이와 cleaning motor 제어는 함께 조정되어야 하지만 책임은 분리되어야 하기 때문이다. |
-| DD-003 | 장애물 판단은 Strategy 패턴으로 분리한다. | 후진 필요 여부, 회전 방향 결정, 후진 중 해제 방향 선택 규칙을 교체 가능한 전략으로 분리하기 위함이다. |
-| DD-004 | 청소 흡입 관리는 `CleaningManager`로 분리한다. | 3초 POWER_UP 유지, 재감지 시 타이머 재시작, 회피 중 먼지 감지 지연 처리를 cleaning motor 관점에서 다루기 위함이다. |
-| DD-005 | 시간 의존 동작은 `Timer` 인터페이스로 추상화한다. | 회전 10초, POWER_UP 3초 규칙을 테스트 가능하게 만들기 위함이다. |
-| DD-006 | 이동 동작은 State 패턴으로 표현한다. | RVC가 현재 상태 객체 하나를 보유하고, 같은 이벤트 인터페이스를 통해 상태별 동작을 다르게 수행하도록 하기 위함이다. |
-| DD-007 | 이동 motor 명령은 `MovementManager`로 분리한다. | 상태 객체가 실제 movement motor 인터페이스에 직접 의존하지 않고 이동 의도를 전달하도록 하기 위함이다. |
+| `RvcController` | 유지 | 사용자 입력, 센서 입력, 상태 전이, manager 조정을 담당하는 최상위 조정 객체 역할이 유효하다. |
+| State 패턴 | 유지 | 이동 상태별 이벤트 처리와 전이를 분리하는 구조가 변경 요구사항에도 적합하다. |
+| `MovementManager` | 유지 | movement motor 명령과 회전 완료 시간 관리를 분리하는 책임이 유효하다. |
+| `CleaningManager` | 유지하되 수정 | cleaning motor 상태와 POWER_UP 타이머 관리는 유지하되, 비전진 중 NORMAL/pending 동작은 제거한다. |
+| Sensor/Motor 인터페이스 | 유지하되 수정 | 외부 하드웨어 추상화 경계는 유지하되, 우측 센서 입력은 내부 인터페이스에서 제거한다. |
+| `ITimer` | 유지 | 4초 회전 완료와 3초 POWER_UP 유지 시간을 테스트 가능하게 한다. |
 
-## 5. 모듈 구성
+## 4. Design Modification Rationale
 
-| 모듈 | 책임 |
-|---|---|
-| Controller Core | 전체 상태 전이 조정, 사용자 시작/종료 이벤트 처리 |
-| Movement States | 이동 상태별 이벤트 처리와 상태 전이 캡슐화 |
-| Sensor Interfaces | 전방/측면/먼지 센서 하드웨어와의 추상 입력 경계 |
-| Motor Interfaces | movement motor, cleaning motor로 나가는 추상 명령 경계 |
-| Obstacle Avoidance Strategy | 장애물 조합에 따른 후진 필요 여부와 회전 방향 결정 |
-| Movement Management | movement motor 명령과 회전 완료 시간 관리 |
-| Cleaning Management | OFF/NORMAL/POWER_UP 청소 흡입 상태 결정 |
-| Timing | 회전 완료 시간과 POWER_UP 유지 시간 판단 |
+| ID | 수정 대상 | 수정 이유 | 설계 방향 |
+|---|---|---|---|
+| DD-001 | 측면 센서 인터페이스 | 실제 우측 센서가 제거되어 `rightDetected`를 controller 판단 입력으로 사용할 수 없다. | `ISideObstacleSensor`는 좌측 polling만 제공한다. |
+| DD-002 | 장애물 회피 상태 흐름 | legacy의 `front+left+right` 직접 감지가 불가능하다. | `RightPathCheckState`를 추가하여 우회전 후 전방 센싱으로 우측 경로를 확인한다. |
+| DD-003 | 삼방향 장애물 처리 | 삼방향 조건은 우측 센서가 아니라 우측 경로 확인 실패로 판단되어야 한다. | 우측 경로가 막히면 원래 방향 복귀 후 `BackwardState` 루프에 진입한다. |
+| DD-004 | 후진 루프 | 180도 회전 대체가 불가능하며 1 tick 후진이 필요하다. | `BackwardState`는 1 tick 후진 후 매번 좌측 polling을 수행한다. |
+| DD-005 | 청소 흡입 상태 | 움직이지 않을 때 cleaning이 켜져 있으면 안 된다. | movement stop/turn/backward 시 cleaning OFF, forward 시작 시 NORMAL을 보장한다. |
+| DD-006 | 먼지 감지 | 먼지 센서는 이벤트가 아니라 1 tick polling 입력이다. | `CleaningManager::tick(movementState)`에서 전진 중 dust polling을 수행한다. |
+| DD-007 | POWER_UP pending | 비전진 중 먼지 값을 나중에 POWER_UP 조건으로 저장하지 않는다. | `pendingPowerUp` 개념과 API를 제거한다. |
+| DD-008 | 회전 시간 | 요구사항에서 회전 완료 시간이 4초로 변경되었다. | `MovementManager` 기본 회전 시간은 4초로 변경한다. |
 
-## 6. 클래스 책임
+## 5. Refactoring Targets
 
-| 클래스/인터페이스 | 책임 |
-|---|---|
-| `RvcController` | 청소 시작/종료, 센서 초기화/종료, 현재 이동 상태 객체 보유, 하위 객체 조정 |
-| `IRvcState` | 이동 상태별 공통 이벤트 인터페이스 정의 |
-| `OffState` | OFF 상태에서 청소 시작 이벤트 처리 |
-| `ForwardState` | 전진 중 전방 장애물, 먼지 감지, 종료 이벤트 처리 |
-| `StoppedForObstacleState` | 장애물 감지 후 정지 상태에서 회피 전략 결과에 따른 상태 전이 처리 |
-| `TurningState` | 좌회전/우회전 중 10초 완료 이벤트 처리 |
-| `BackwardState` | 후진 중 측면 센서 polling 결과에 따른 회전 전이 처리 |
-| `IObstacleAvoidanceStrategy` | 장애물 조합에 따른 후진 필요 여부와 회전 방향 결정 인터페이스 |
-| `LeftPriorityAvoidanceStrategy` | 좌회전 우선 요구사항을 반영한 기본 회피 전략 |
-| `MovementManager` | movement motor 명령, 회전 10초 타이머, 이동 완료 판단 관리 |
-| `CleaningManager` | 흡입 상태 전이, POWER_UP 타이머, 회피 중 먼지 감지 지연 처리 |
-| `IFrontObstacleSensor` | 전방 장애물 interrupt 입력을 controller에 전달 |
-| `ISideObstacleSensor` | 좌측/우측 장애물 값을 polling 방식으로 제공 |
-| `IDustSensor` | 먼지 감지 값을 제공 |
-| `IMovementMotor` | 전진, 정지, 후진, 좌회전, 우회전 명령 수신 |
-| `ICleaningMotor` | OFF, NORMAL, POWER_UP 흡입 명령 수신 |
-| `ITimer` | 3초/10초 경과 여부를 추상화 |
+| 영역 | Legacy 설계 | Revised 설계 |
+|---|---|---|
+| `SideObstacleSnapshot` | `leftDetected`, `rightDetected` 포함 | 제거하거나 `LeftObstacleSnapshot { leftDetected }`로 축소한다. controller 내부에는 `rightDetected` 필드가 남지 않는다. |
+| `ISideObstacleSensor` | 좌우 장애물 값을 polling | 좌측 장애물 값만 polling한다. 예: `readLeft()` 또는 `read()` returning `LeftObstacleSnapshot`. |
+| `IObstacleSensor` compatibility | legacy simulator 입력에 `isRightDetected()` 존재 | controller 판단 흐름에서는 사용하지 않는다. 필요 시 adapter 내부 검증 관찰값으로만 격리한다. |
+| `IObstacleAvoidanceStrategy` | 좌우 snapshot으로 좌회전/우회전/후진 결정 | 좌측 값만으로 `TurnLeft` 또는 `CheckRightPath`를 결정한다. 우측 경로 결과는 state machine이 처리한다. |
+| `StoppedForObstacleState` | 좌우 snapshot을 읽고 즉시 방향 결정 | 좌측 polling 후 좌측이 비어 있으면 좌회전, 막혀 있으면 `RightPathCheckState`로 전이한다. |
+| `TurningState` | 좌/우 회전 완료 후 항상 전진 | 일반 회전 완료 후에만 전진한다. 우측 경로 확인용 우회전은 별도 상태가 전방 센싱 결과를 판단한다. |
+| `BackwardState` | 후진 중 좌우 snapshot으로 해제 방향 결정 | 1 tick 후진 후 좌측 polling을 수행한다. 좌측이 비면 좌회전, 계속 막히면 우측 경로 확인으로 전이한다. |
+| `CleaningManager` | 비전진 중 NORMAL 유지 및 pending POWER_UP 지원 | 비전진 중 OFF 유지, pending 제거, 전진 tick에서 dust polling으로 POWER_UP 판단. |
 
-## 7. 클래스 다이어그램
+## 6. Updated Interface Definitions
 
-```mermaid
-classDiagram
-    class RvcController {
-        -currentState: IRvcState
-        -frontSensor: IFrontObstacleSensor
-        -sideSensor: ISideObstacleSensor
-        -dustSensor: IDustSensor
-        -movementManager: MovementManager
-        -cleaningManager: CleaningManager
-        -avoidanceStrategy: IObstacleAvoidanceStrategy
-        +startCleaning()
-        +stopCleaning()
-        +onFrontObstacleDetected()
-        +onDustDetected()
-        +changeState(state)
-        +tick()
-    }
+### 6.1 Sensor Interfaces
 
-    class IRvcState {
-        <<interface>>
-        +onEnter(context)
-        +startCleaning(context)
-        +stopCleaning(context)
-        +onFrontObstacleDetected(context)
-        +onDustDetected(context)
-        +tick(context)
-    }
+```cpp
+class IFrontObstacleSensor {
+public:
+    virtual void initialize() = 0;
+    virtual void shutdown() = 0;
+    virtual void registerInterruptHandler(std::function<void()> handler) = 0;
 
-    class OffState {
-        +startCleaning(context)
-    }
+    // Used after RightPathCheckState finishes a 90-degree right turn.
+    virtual bool isObstacleDetected() = 0;
+};
 
-    class ForwardState {
-        -pendingFrontObstacle: bool
-        +stopCleaning(context)
-        +onFrontObstacleDetected(context)
-        +onDustDetected(context)
-    }
+class ISideObstacleSensor {
+public:
+    virtual void initialize() = 0;
+    virtual void shutdown() = 0;
 
-    class StoppedForObstacleState {
-        -sideSnapshot
-        +onEnter(context)
-        +tick(context)
-    }
+    // Left-side polling only. No right sensor value is exposed internally.
+    virtual bool readLeft() = 0;
+};
 
-    class TurningState {
-        -direction
-        -turnStarted: bool
-        +onEnter(context)
-        +tick(context)
-    }
+class IDustSensor {
+public:
+    virtual void initialize() = 0;
+    virtual void shutdown() = 0;
 
-    class BackwardState {
-        -previousSideSnapshot
-        +onEnter(context)
-        +tick(context)
-    }
-
-    class IObstacleAvoidanceStrategy {
-        <<interface>>
-        +decideOnFrontObstacle(sideSnapshot)
-        +decideWhileBackward(previousSideSnapshot, currentSideSnapshot)
-    }
-
-    class LeftPriorityAvoidanceStrategy {
-        +decideOnFrontObstacle(sideSnapshot)
-        +decideWhileBackward(previousSideSnapshot, currentSideSnapshot)
-    }
-
-    class MovementManager {
-        -motor: IMovementMotor
-        -turnTimer: ITimer
-        -currentCommand
-        -turnDurationSeconds: int
-        +stop()
-        +moveForward()
-        +moveBackward()
-        +turnLeft()
-        +turnRight()
-        +isTurnComplete()
-    }
-
-    class CleaningManager {
-        -cleaningMotor: ICleaningMotor
-        -dustSensor: IDustSensor
-        -powerUpTimer: ITimer
-        -currentState
-        -pendingPowerUp: bool
-        -powerUpDurationSeconds: int
-        +start()
-        +stop()
-        +onDustDetected(movementState)
-        +onMovementStateChanged(movementState)
-        +tick()
-    }
-
-    class IFrontObstacleSensor {
-        <<interface>>
-        +initialize()
-        +shutdown()
-        +registerInterruptHandler(handler)
-    }
-
-    class ISideObstacleSensor {
-        <<interface>>
-        +initialize()
-        +shutdown()
-        +read()
-    }
-
-    class IDustSensor {
-        <<interface>>
-        +initialize()
-        +shutdown()
-        +isDustDetected()
-    }
-
-    class IMovementMotor {
-        <<interface>>
-        +stop()
-        +moveForward()
-        +moveBackward()
-        +turnLeft()
-        +turnRight()
-    }
-
-    class ICleaningMotor {
-        <<interface>>
-        +off()
-        +normal()
-        +powerUp()
-    }
-
-    class ITimer {
-        <<interface>>
-        +start(duration)
-        +expired()
-        +reset()
-    }
-
-    RvcController --> IRvcState : current
-    IRvcState <|.. OffState
-    IRvcState <|.. ForwardState
-    IRvcState <|.. StoppedForObstacleState
-    IRvcState <|.. TurningState
-    IRvcState <|.. BackwardState
-
-    RvcController --> IFrontObstacleSensor
-    RvcController --> ISideObstacleSensor
-    RvcController --> IDustSensor
-    RvcController --> MovementManager
-    RvcController --> CleaningManager
-    RvcController --> IObstacleAvoidanceStrategy
-    IObstacleAvoidanceStrategy <|.. LeftPriorityAvoidanceStrategy
-    StoppedForObstacleState --> IObstacleAvoidanceStrategy
-    BackwardState --> IObstacleAvoidanceStrategy
-    MovementManager --> IMovementMotor
-    MovementManager --> ITimer
-    CleaningManager --> IDustSensor
-    CleaningManager --> ICleaningMotor
-    CleaningManager --> ITimer
+    // Polled once per controller tick while movement state is Forward.
+    virtual bool isDustDetected() = 0;
+};
 ```
 
-`RvcController`는 외부 actor로부터 들어온 이벤트를 현재 `IRvcState` 객체에 위임한다. 각 concrete state는 동일한 인터페이스를 구현하지만, 현재 상태에 맞는 동작과 다음 상태 전이를 다르게 수행한다.
+### 6.2 Movement and Cleaning Interfaces
 
-## 8. 인터페이스 설계
+```cpp
+class IMovementMotor {
+public:
+    virtual void stop() = 0;
+    virtual void moveForward() = 0;
+    virtual void moveBackward() = 0;
+    virtual void turnLeft() = 0;
+    virtual void turnRight() = 0;
+};
 
-### 8.1 센서 인터페이스
+class ICleaningMotor {
+public:
+    virtual void off() = 0;
+    virtual void normal() = 0;
+    virtual void powerUp() = 0;
+};
+```
 
-| 인터페이스 | 주요 동작 | 관련 요구사항 |
-|---|---|---|
-| `IFrontObstacleSensor` | 초기화, 종료, 전방 장애물 interrupt handler 등록 | RVC-FR-004, RVC-FR-006, RVC-FR-032, RVC-FR-033 |
-| `ISideObstacleSensor` | 초기화, 종료, 좌우 장애물 값 polling | RVC-FR-005, RVC-FR-007, RVC-FR-011 ~ RVC-FR-014, RVC-FR-032, RVC-FR-033 |
-| `IDustSensor` | 초기화, 종료, 먼지 감지 값 제공 | RVC-FR-025 ~ RVC-FR-029, RVC-FR-032, RVC-FR-033 |
+### 6.3 Manager Interfaces
 
-### 8.2 Actuator 인터페이스
+```cpp
+class MovementManager {
+public:
+    void stop();
+    void moveForward();
+    void moveBackward();
+    void turnLeft();
+    void turnRight();
+    bool isTurnComplete() const;
+    MovementState currentState() const;
+};
 
-| 인터페이스 | 주요 동작 | 관련 요구사항 |
-|---|---|---|
-| `IMovementMotor` | 정지, 전진, 후진, 좌회전, 우회전 명령 | RVC-FR-003, RVC-FR-008 ~ RVC-FR-016, RVC-FR-030 |
-| `ICleaningMotor` | OFF, NORMAL, POWER_UP 흡입 명령 | RVC-FR-017 ~ RVC-FR-029, RVC-FR-031 |
+class CleaningManager {
+public:
+    void enterOff();
+    void enterNormal();
+    void enterPowerUp();
 
-### 8.3 State 패턴 인터페이스
+    // Performs dust polling only when movementState == MovementState::Forward.
+    void tick(MovementState movementState);
+    CleaningState currentState() const;
+};
+```
 
-`RvcController`는 현재 이동 상태를 나타내는 `IRvcState` 객체 하나를 보유한다. 사용자 입력, 전방 장애물 interrupt, 먼지 감지, 주기적 tick 이벤트는 모두 현재 상태 객체의 동일한 인터페이스로 위임된다.
+`CleaningManager`는 `pendingPowerUp()` 및 비전진 중 먼지 저장 API를 제공하지 않는다.
 
-| 상태 클래스 | 주요 책임 | 관련 요구사항 |
-|---|---|---|
-| `OffState` | 청소 시작 시 센서 초기화, NORMAL 흡입, 전진 상태 전이 시작 | RVC-FR-001, RVC-FR-021, RVC-FR-022, RVC-FR-032 |
-| `ForwardState` | 전방 장애물 interrupt와 전진 중 먼지 감지 처리 | RVC-FR-003, RVC-FR-004, RVC-FR-025 |
-| `StoppedForObstacleState` | 측면 센서 값을 읽고 회피 전략에 따라 회전 또는 후진으로 전이 | RVC-FR-008 ~ RVC-FR-011 |
-| `TurningState` | 좌회전/우회전 명령 후 10초 경과 시 전진으로 전이 | RVC-FR-015, RVC-FR-016 |
-| `BackwardState` | 후진 중 측면 센서를 polling하고 장애물이 해제된 방향으로 전이 | RVC-FR-011 ~ RVC-FR-014 |
+### 6.4 Obstacle Avoidance Strategy
 
-### 8.4 Strategy 패턴 인터페이스
+```cpp
+enum class AvoidanceAction {
+    TurnLeft,
+    CheckRightPath
+};
 
-`IObstacleAvoidanceStrategy`는 장애물 발견 후 회피가 필요할 때 후진 필요 여부와 회전 방향을 결정한다. 기본 전략은 `LeftPriorityAvoidanceStrategy`이며, 요구사항의 좌회전 우선 규칙을 반영한다.
+class IObstacleAvoidanceStrategy {
+public:
+    virtual AvoidanceAction decideAfterFrontObstacle(bool leftDetected) const = 0;
+    virtual AvoidanceAction decideAfterBackwardTick(bool leftDetected) const = 0;
+};
+```
 
-| 전략 메서드 | 결정 내용 | 관련 요구사항 |
-|---|---|---|
-| `decideOnFrontObstacle(sideSnapshot)` | 전방 장애물 감지 후 좌우 센서 조합에 따라 좌회전, 우회전, 후진 중 하나를 결정 | RVC-FR-008 ~ RVC-FR-011 |
-| `decideWhileBackward(previousSideSnapshot, currentSideSnapshot)` | 후진 중 좌우 장애물 해제 상태에 따라 좌회전, 우회전, 후진 유지 중 하나를 결정 | RVC-FR-012 ~ RVC-FR-014 |
+| 메서드 | 결정 규칙 |
+|---|---|
+| `decideAfterFrontObstacle(false)` | 전방 단독 장애물로 보고 좌회전을 선택한다. |
+| `decideAfterFrontObstacle(true)` | 전방+좌측 장애물로 보고 우측 경로 확인을 선택한다. |
+| `decideAfterBackwardTick(false)` | 후진 후 좌측이 열렸으므로 좌회전을 선택한다. |
+| `decideAfterBackwardTick(true)` | 좌측이 계속 막혀 있으므로 우측 경로 확인을 선택한다. |
 
-## 9. 이동 상태 머신
+## 7. Revised Class Diagram
 
-이동 상태 머신은 State 패턴으로 구현 가능한 형태로 설계한다. 상태 다이어그램의 각 상태는 `IRvcState`의 구체 상태 클래스에 대응한다.
+```plantuml
+@startuml
+skinparam classAttributeIconSize 0
 
-### 9.1 이동 상태
+class RvcController {
+  -currentState: IRvcState
+  -frontSensor: IFrontObstacleSensor
+  -sideSensor: ISideObstacleSensor
+  -dustSensor: IDustSensor
+  -movementManager: MovementManager
+  -cleaningManager: CleaningManager
+  -avoidanceStrategy: IObstacleAvoidanceStrategy
+  +startCleaning()
+  +stopCleaning()
+  +onFrontObstacleDetected()
+  +tick()
+  +changeState(next: IRvcState)
+  +stopMovementAndCleaning()
+  +startForwardCleaning()
+}
+
+interface IRvcState {
+  +onEnter(context: RvcController)
+  +startCleaning(context: RvcController)
+  +stopCleaning(context: RvcController)
+  +onFrontObstacleDetected(context: RvcController)
+  +tick(context: RvcController)
+  +movementState(): MovementState
+}
+
+class OffState
+class ForwardState
+class StoppedForObstacleState
+class TurningToForwardState {
+  -direction: TurnDirection
+}
+class RightPathCheckState
+class ReturnFromRightCheckState
+class BackwardState
+
+interface IFrontObstacleSensor {
+  +initialize()
+  +shutdown()
+  +registerInterruptHandler(handler)
+  +isObstacleDetected(): bool
+}
+
+interface ISideObstacleSensor {
+  +initialize()
+  +shutdown()
+  +readLeft(): bool
+}
+
+interface IDustSensor {
+  +initialize()
+  +shutdown()
+  +isDustDetected(): bool
+}
+
+interface IMovementMotor {
+  +stop()
+  +moveForward()
+  +moveBackward()
+  +turnLeft()
+  +turnRight()
+}
+
+interface ICleaningMotor {
+  +off()
+  +normal()
+  +powerUp()
+}
+
+interface ITimer {
+  +start(duration)
+  +expired(): bool
+  +reset()
+}
+
+class MovementManager {
+  -motor: IMovementMotor
+  -turnTimer: ITimer
+  -turnDuration: 4 seconds
+  -state: MovementState
+  +stop()
+  +moveForward()
+  +moveBackward()
+  +turnLeft()
+  +turnRight()
+  +isTurnComplete(): bool
+  +currentState(): MovementState
+}
+
+class CleaningManager {
+  -motor: ICleaningMotor
+  -dustSensor: IDustSensor
+  -powerUpTimer: ITimer
+  -state: CleaningState
+  +enterOff()
+  +enterNormal()
+  +enterPowerUp()
+  +tick(movementState: MovementState)
+  +currentState(): CleaningState
+}
+
+interface IObstacleAvoidanceStrategy {
+  +decideAfterFrontObstacle(leftDetected: bool): AvoidanceAction
+  +decideAfterBackwardTick(leftDetected: bool): AvoidanceAction
+}
+
+class LeftPriorityAvoidanceStrategy
+
+RvcController --> IRvcState : current
+IRvcState <|.. OffState
+IRvcState <|.. ForwardState
+IRvcState <|.. StoppedForObstacleState
+IRvcState <|.. TurningToForwardState
+IRvcState <|.. RightPathCheckState
+IRvcState <|.. ReturnFromRightCheckState
+IRvcState <|.. BackwardState
+
+RvcController --> IFrontObstacleSensor
+RvcController --> ISideObstacleSensor
+RvcController --> IDustSensor
+RvcController --> MovementManager
+RvcController --> CleaningManager
+RvcController --> IObstacleAvoidanceStrategy
+
+IObstacleAvoidanceStrategy <|.. LeftPriorityAvoidanceStrategy
+MovementManager --> IMovementMotor
+MovementManager --> ITimer
+CleaningManager --> ICleaningMotor
+CleaningManager --> IDustSensor
+CleaningManager --> ITimer
+
+StoppedForObstacleState --> IObstacleAvoidanceStrategy
+BackwardState --> IObstacleAvoidanceStrategy
+RightPathCheckState --> IFrontObstacleSensor
+
+note right of ISideObstacleSensor
+Internal interface exposes only left polling.
+rightDetected is not part of controller input.
+end note
+
+note right of CleaningManager
+No pendingPowerUp state.
+Non-forward movement keeps cleaning OFF.
+end note
+@enduml
+```
+
+## 8. Revised Movement State Machine
+
+### 8.1 Movement States
 
 | 상태 | 의미 |
 |---|---|
-| `Off` | 시스템 OFF 상태 |
-| `Forward` | 전진 청소 상태 |
-| `StoppedForObstacle` | 전방 장애물 감지 후 정지한 상태 |
-| `TurningLeft` | 좌회전 중 상태 |
-| `TurningRight` | 우회전 중 상태 |
-| `Backward` | 삼방향 장애물 감지 후 후진 중 상태 |
+| `Off` | 청소 세션이 시작되지 않았거나 종료된 상태 |
+| `Forward` | 전진 청소 상태. cleaning motor는 최소 NORMAL이다. |
+| `StoppedForObstacle` | 전방 장애물 interrupt 후 movement와 cleaning이 모두 멈춘 상태 |
+| `TurningToForward` | 좌회전 후 전진하기 위한 일반 회전 상태 |
+| `RightPathCheck` | 우측 경로 확인을 위해 90도 우회전하고, 완료 후 전방 센싱을 수행하는 상태 |
+| `ReturnFromRightCheck` | 우측 경로가 막혀 있을 때 90도 좌회전으로 원래 방향에 복귀하는 상태 |
+| `Backward` | 원래 방향으로 복귀한 상태에서 1 tick 후진하고 좌측 polling을 수행하는 상태 |
 
-### 9.2 이동 상태 다이어그램
+### 8.2 Movement State Diagram
 
-```mermaid
-stateDiagram-v2
-    [*] --> Off
-    Off --> Forward: startCleaning / initialize sensors, NORMAL, moveForward
-    Forward --> Off: stopCleaning / stop, OFF, shutdown sensors
+```plantuml
+@startuml
+[*] --> Off
 
-    Forward --> StoppedForObstacle: front obstacle interrupt / stop, NORMAL
-    StoppedForObstacle --> TurningLeft: front only OR front+right / turnLeft
-    StoppedForObstacle --> TurningRight: front+left / turnRight
-    StoppedForObstacle --> Backward: front+left+right / moveBackward
+Off --> Forward : startCleaning / initialize sensors,\ncleaning NORMAL, moveForward
 
-    Backward --> TurningLeft: left cleared OR both cleared / turnLeft
-    Backward --> TurningRight: right cleared / turnRight
+Forward --> StoppedForObstacle : front obstacle interrupt /\nmovement stop, cleaning OFF
+Forward --> Off : stopCleaning / stop movement,\ncleaning OFF, shutdown sensors
 
-    TurningLeft --> Forward: 10 seconds elapsed / moveForward
-    TurningRight --> Forward: 10 seconds elapsed / moveForward
+StoppedForObstacle --> TurningToForward : left polling = clear /\nturnLeft
+StoppedForObstacle --> RightPathCheck : left polling = blocked /\nturnRight
+StoppedForObstacle --> Off : stopCleaning
 
-    StoppedForObstacle --> Off: stopCleaning
-    TurningLeft --> Off: stopCleaning
-    TurningRight --> Off: stopCleaning
-    Backward --> Off: stopCleaning
+TurningToForward --> Forward : 4s elapsed /\ncleaning NORMAL, moveForward
+TurningToForward --> Off : stopCleaning
+
+RightPathCheck --> Forward : 4s elapsed and front clear /\ncleaning NORMAL, moveForward
+RightPathCheck --> ReturnFromRightCheck : 4s elapsed and front blocked /\nturnLeft
+RightPathCheck --> Off : stopCleaning
+
+ReturnFromRightCheck --> Backward : 4s elapsed /\noriginal direction restored
+ReturnFromRightCheck --> Off : stopCleaning
+
+Backward --> TurningToForward : after 1 tick backward,\nleft polling = clear / turnLeft
+Backward --> RightPathCheck : after 1 tick backward,\nleft polling = blocked / turnRight
+Backward --> Off : stopCleaning
+
+note right of Backward
+Long backward timeout is not considered
+in the current requirements.
+end note
+@enduml
 ```
 
-### 9.3 종료 입력 설계 보류
+### 8.3 RightPathCheck 상세 규칙
 
-`RVC-TBD-004`에 따라 회전, 후진, POWER_UP 중 청소 종료 버튼 입력이 발생했을 때 즉시 OFF로 전환하는지 여부는 요구사항에서 아직 확정되지 않았다. 본 설계 다이어그램은 안전한 기본 후보로 모든 이동 상태에서 `stopCleaning` 이벤트를 받을 수 있게 표현했지만, 최종 구현 전 요구사항 확정이 필요하다.
-
-## 10. 청소 흡입 상태 머신
-
-### 10.1 청소 흡입 상태
-
-| 상태 | 의미 |
+| 단계 | 동작 |
 |---|---|
-| `CleaningOff` | 전체 시스템 OFF로 인해 흡입 정지 |
-| `Normal` | 기본 흡입 상태 |
-| `PowerUp` | 먼지 감지 후 3초 유지되는 강화 흡입 상태 |
+| 1 | `RightPathCheckState::onEnter()`에서 cleaning OFF를 유지하고 movement motor에 90도 우회전 명령을 보낸다. |
+| 2 | `MovementManager::isTurnComplete()`가 4초 경과를 반환할 때까지 tick을 기다린다. |
+| 3 | 회전 완료 후 `IFrontObstacleSensor::isObstacleDetected()`로 전방 값을 polling한다. |
+| 4 | 전방 장애물이 없으면 현재 우회전한 방향으로 전진한다. 이때 cleaning motor에 NORMAL을 먼저 보장한다. |
+| 5 | 전방 장애물이 있으면 `ReturnFromRightCheckState`로 전이하고 90도 좌회전으로 원래 방향에 복귀한다. |
+| 6 | 원래 방향 복귀 후 `BackwardState`에서 1 tick 후진한다. |
 
-### 10.2 청소 흡입 상태 다이어그램
+## 9. Revised Cleaning State Machine
 
-```mermaid
-stateDiagram-v2
-    [*] --> CleaningOff
-    CleaningOff --> Normal: startCleaning / cleaningMotor.normal
-    Normal --> CleaningOff: stopCleaning / cleaningMotor.off
-    PowerUp --> CleaningOff: stopCleaning / cleaningMotor.off
+```plantuml
+@startuml
+[*] --> CleaningOff
 
-    Normal --> PowerUp: dust detected while Forward / cleaningMotor.powerUp, start 3s timer
-    PowerUp --> PowerUp: 3s elapsed and dust detected / restart 3s timer
-    PowerUp --> Normal: 3s elapsed and no dust / cleaningMotor.normal
+CleaningOff --> Normal : movement enters Forward /\ncleaningMotor.normal
+Normal --> PowerUp : tick while Forward and dust detected /\ncleaningMotor.powerUp, start 3s timer
+PowerUp --> PowerUp : 3s elapsed and dust detected /\nrestart 3s timer
+PowerUp --> Normal : 3s elapsed and no dust /\ncleaningMotor.normal
 
-    Normal --> Normal: dust detected while stopped/turning/backward / mark pendingPowerUp
-    Normal --> PowerUp: movement returns to Forward and pendingPowerUp / cleaningMotor.powerUp, start 3s timer
-
-    PowerUp --> Normal: movement leaves Forward / cleaningMotor.normal
+Normal --> CleaningOff : movement leaves Forward or stopCleaning /\ncleaningMotor.off
+PowerUp --> CleaningOff : movement leaves Forward or stopCleaning /\ncleaningMotor.off
+CleaningOff --> CleaningOff : tick while non-forward /\nno pending POWER_UP
+@enduml
 ```
 
-## 11. 주요 상호작용 설계
+| 규칙 | 설명 |
+|---|---|
+| Cleaning invariant | movement가 `Forward`가 아니면 cleaning state는 `CleaningOff`이다. |
+| Forward minimum | movement가 `Forward`로 진입할 때 cleaning state는 최소 `Normal`이다. |
+| Dust polling | `Forward` tick에서 먼지 센서를 polling한다. |
+| Pending 제거 | 정지/회전/후진 중 먼지 값은 이후 POWER_UP 조건으로 저장하지 않는다. |
 
-### 11.1 SD-001 청소 시작
+## 10. Key Interaction Design
 
-```mermaid
-sequenceDiagram
-    actor User as 사용자
-    participant Controller as RvcController
-    participant Front as IFrontObstacleSensor
-    participant Side as ISideObstacleSensor
-    participant Dust as IDustSensor
-    participant Cleaning as CleaningManager
-    participant Move as MovementManager
+### 10.1 전방+좌측 장애물 후 우측 경로 확인
 
-    User->>Controller: startCleaning()
-    Controller->>Front: initialize()
-    Controller->>Side: initialize()
-    Controller->>Dust: initialize()
-    Controller->>Front: registerInterruptHandler(...)
-    Controller->>Cleaning: start()
-    Controller->>Move: moveForward()
+```plantuml
+@startuml
+participant "RvcController" as RVC
+participant "ISideObstacleSensor" as Side
+participant "IFrontObstacleSensor" as Front
+participant "MovementManager" as Move
+participant "CleaningManager" as Clean
+
+RVC -> Move : stop()
+RVC -> Clean : enterOff()
+RVC -> Side : readLeft()
+Side --> RVC : true
+RVC -> Move : turnRight()
+RVC -> Move : isTurnComplete()
+Move --> RVC : true after 4s
+RVC -> Front : isObstacleDetected()
+Front --> RVC : frontBlocked
+
+alt frontBlocked == false
+    RVC -> Clean : enterNormal()
+    RVC -> Move : moveForward()
+else frontBlocked == true
+    RVC -> Move : turnLeft()
+    RVC -> Move : isTurnComplete()
+    Move --> RVC : true after 4s
+    RVC -> RVC : changeState(BackwardState)
+end
+@enduml
 ```
 
-### 11.2 SD-002 청소 종료
+### 10.2 삼방향 장애물 반복 처리
 
-```mermaid
-sequenceDiagram
-    actor User as 사용자
-    participant Controller as RvcController
-    participant Move as MovementManager
-    participant Cleaning as CleaningManager
-    participant Front as IFrontObstacleSensor
-    participant Side as ISideObstacleSensor
-    participant Dust as IDustSensor
+```plantuml
+@startuml
+participant "RvcController" as RVC
+participant "ISideObstacleSensor" as Side
+participant "IFrontObstacleSensor" as Front
+participant "MovementManager" as Move
+participant "CleaningManager" as Clean
 
-    User->>Controller: stopCleaning()
-    Controller->>Move: stop()
-    Controller->>Cleaning: stop()
-    Controller->>Front: shutdown()
-    Controller->>Side: shutdown()
-    Controller->>Dust: shutdown()
-    Controller-->>Controller: movementState = Off
-```
+RVC -> Clean : enterOff()
 
-### 11.3 SD-003 전방 장애물 회피
+loop until left clear or right path clear
+    RVC -> Move : moveBackward()
+    RVC -> RVC : wait 1 tick
+    RVC -> Move : stop()
+    RVC -> Clean : enterOff()
+    RVC -> Side : readLeft()
+    Side --> RVC : leftDetected
 
-```mermaid
-sequenceDiagram
-    participant Front as IFrontObstacleSensor
-    participant Controller as RvcController
-    participant Side as ISideObstacleSensor
-    participant Strategy as IObstacleAvoidanceStrategy
-    participant Cleaning as CleaningManager
-    participant Move as MovementManager
-
-    Front->>Controller: onFrontObstacleDetected()
-    Controller->>Move: stop()
-    Controller->>Cleaning: onMovementStateChanged(StoppedForObstacle)
-    Controller->>Side: read()
-    Side-->>Controller: sideSnapshot
-    Controller->>Strategy: decideOnFrontObstacle(sideSnapshot)
-    Strategy-->>Controller: turnLeft or turnRight or backward
-    Controller->>Move: selected movement command
-```
-
-### 11.4 SD-004 삼방향 장애물 탈출
-
-```mermaid
-sequenceDiagram
-    participant Controller as RvcController
-    participant Side as ISideObstacleSensor
-    participant Strategy as IObstacleAvoidanceStrategy
-    participant Cleaning as CleaningManager
-    participant Move as MovementManager
-
-    Controller->>Move: stop()
-    Controller->>Cleaning: onMovementStateChanged(StoppedForObstacle)
-    Controller->>Side: read()
-    Side-->>Controller: front + left + right blocked
-    Controller->>Strategy: decideOnFrontObstacle(sideSnapshot)
-    Strategy-->>Controller: backward
-    Controller->>Move: moveBackward()
-    Controller->>Cleaning: onMovementStateChanged(Backward)
-    loop backward state
-        Controller->>Side: read()
-        Side-->>Controller: currentSideSnapshot
-        Controller->>Strategy: decideWhileBackward(previousSideSnapshot, currentSideSnapshot)
-        alt left cleared or both cleared
-            Strategy-->>Controller: turnLeft
-            Controller->>Move: turnLeft()
-        else right cleared
-            Strategy-->>Controller: turnRight
-            Controller->>Move: turnRight()
-        else neither side cleared
-            Strategy-->>Controller: keepBackward
+    alt leftDetected == false
+        RVC -> Move : turnLeft()
+        RVC -> Move : isTurnComplete()
+        Move --> RVC : true after 4s
+        RVC -> Clean : enterNormal()
+        RVC -> Move : moveForward()
+    else leftDetected == true
+        RVC -> Move : turnRight()
+        RVC -> Move : isTurnComplete()
+        Move --> RVC : true after 4s
+        RVC -> Front : isObstacleDetected()
+        Front --> RVC : frontBlocked
+        alt frontBlocked == false
+            RVC -> Clean : enterNormal()
+            RVC -> Move : moveForward()
+        else frontBlocked == true
+            RVC -> Move : turnLeft()
+            RVC -> Move : isTurnComplete()
+            Move --> RVC : true after 4s
         end
     end
-    Controller->>Move: isTurnComplete()
-    Move-->>Controller: true
-    Controller->>Move: moveForward()
-    Controller->>Cleaning: onMovementStateChanged(Forward)
+end
+@enduml
 ```
 
-### 11.5 SD-005 POWER_UP 유지
+### 10.3 Dust Polling
 
-```mermaid
-sequenceDiagram
-    participant Controller as RvcController
-    participant Cleaning as CleaningManager
-    participant Dust as IDustSensor
-    participant Clean as ICleaningMotor
-    participant Timer as ITimer
+```plantuml
+@startuml
+participant "RvcController" as RVC
+participant "MovementManager" as Move
+participant "CleaningManager" as Clean
+participant "IDustSensor" as Dust
 
-    Controller->>Cleaning: onDustDetected(Forward)
-    Cleaning->>Clean: powerUp()
-    Cleaning->>Timer: start(3 seconds)
-    Controller->>Cleaning: tick()
-    Cleaning->>Timer: expired()
-    Timer-->>Cleaning: true
-    Cleaning->>Dust: isDustDetected()
-    alt dust detected
-        Cleaning->>Timer: start(3 seconds)
-    else no dust
-        Cleaning->>Clean: normal()
+RVC -> Move : currentState()
+Move --> RVC : movementState
+RVC -> Clean : tick(movementState)
+
+alt movementState == Forward
+    Clean -> Dust : isDustDetected()
+    Dust --> Clean : dustDetected
+    alt dustDetected
+        Clean -> Clean : enterPowerUp()
+    else no dust and power-up timer expired
+        Clean -> Clean : enterNormal()
     end
+else movementState != Forward
+    Clean -> Clean : enterOff()
+end
+@enduml
 ```
 
-### 11.6 State 이벤트 위임 구조
+## 11. Dependency Analysis
 
-```mermaid
-sequenceDiagram
-    participant External as 외부 이벤트
-    participant Controller as RvcController
-    participant State as IRvcState
-    participant NextState as IRvcState
-
-    External->>Controller: start/stop/frontObstacle/dust/tick
-    Controller->>State: same event method(context)
-    State-->>Controller: action result and optional next state
-    alt state transition required
-        Controller->>NextState: onEnter(context)
-        Controller-->>Controller: currentState = NextState
-    else state unchanged
-        Controller-->>Controller: keep currentState
-    end
-```
-
-## 12. 요구사항-설계 추적표
-
-| 요구사항 | 설계 요소 |
+| 의존성 | 설계 판단 |
 |---|---|
-| RVC-FR-001, RVC-FR-021, RVC-FR-022 | `RvcController.startCleaning`, SD-001 |
-| RVC-FR-002, RVC-FR-020 | `RvcController.stopCleaning`, 이동/청소 흡입 상태의 `Off` 전이, SD-002 |
-| RVC-FR-003 | 이동 상태 `Forward`, `MovementManager.moveForward` |
-| RVC-FR-004 ~ RVC-FR-007 | `IFrontObstacleSensor`, `ISideObstacleSensor`, `IObstacleAvoidanceStrategy`, SD-003, SD-004 |
-| RVC-FR-008 ~ RVC-FR-016 | 이동 상태 머신, `IRvcState`, `IObstacleAvoidanceStrategy`, `MovementManager`, `IMovementMotor`, SD-003, SD-004 |
-| RVC-FR-017 ~ RVC-FR-029 | 청소 흡입 상태 머신, `CleaningManager`, `ICleaningMotor`, `ITimer`, SD-005 |
-| RVC-FR-030 | `MovementManager`, `IMovementMotor` |
-| RVC-FR-031 | `CleaningManager`, `ICleaningMotor` |
-| RVC-FR-032, RVC-FR-033 | 센서 인터페이스 `initialize`, `shutdown`, SD-001, SD-002 |
-| RVC-NFR-001 | 모든 외부 하드웨어 의존성은 인터페이스 뒤에 배치 |
-| RVC-NFR-003 | Sensor Interfaces, Controller Core, Motor Interfaces, Movement Management, Cleaning Management 분리 |
+| `RvcController` -> sensors/managers/strategy | 기존 조정자 역할이므로 유지한다. |
+| state classes -> `RvcController` context | 기존 State 패턴의 context 접근 구조를 유지한다. |
+| `MovementManager` -> `CleaningManager` | 직접 의존시키지 않는다. movement와 cleaning 결합 규칙은 `RvcController` 또는 state transition helper에서 조정한다. |
+| `CleaningManager` -> `MovementManager` | 직접 의존시키지 않고 `tick(MovementState)`로 필요한 상태만 전달한다. |
+| sensors -> controller | 전방 interrupt callback 외에는 controller를 직접 참조하지 않는다. |
+| simulator adapter -> controller | controller 내부 인터페이스에는 좌측 값만 전달한다. 우측 관찰값은 controller 판단으로 전달하지 않는다. |
 
-## 13. 미확정 요구사항의 설계 영향
+이 구조는 manager 간 순환 의존을 만들지 않는다.
 
-| 미정 항목 | 설계 영향 |
+## 12. Requirements to Design Traceability
+
+| 요구사항/분석 규칙 | 설계 요소 |
 |---|---|
-| RVC-TBD-001 후진 중 좌우 센서 polling 주기 | `Backward` 상태에서 `tick()` 또는 주기 이벤트로 처리 가능하도록 열어둔다. |
-| RVC-TBD-002 후진 장시간 지속 예외 처리 | 현재 상태 머신에는 timeout 전이를 넣지 않는다. 향후 `Backward` 상태에 timeout 전이를 추가할 수 있다. |
-| RVC-TBD-003 360도 회전 탈출 기능 | 현재 설계에는 포함하지 않는다. 향후 별도 이동 상태로 확장 가능하다. |
-| RVC-TBD-004 종료 입력 우선순위 | 설계 다이어그램에는 모든 이동 상태에서 종료 이벤트 후보를 표시했으나, 구현 전 최종 확정이 필요하다. |
+| RVC-FR-035, DR-010 | `ISideObstacleSensor::readLeft()`, `rightDetected` 제거 |
+| RVC-FR-009, RVC-FR-036, RVC-FR-037, DR-011 | `RightPathCheckState`, `IFrontObstacleSensor::isObstacleDetected()` |
+| RVC-FR-011, DR-012 | `ReturnFromRightCheckState`, `BackwardState` |
+| RVC-FR-013, RVC-CON-009, DR-013 | `BackwardState`의 1 tick 후진 및 매회 좌측 polling |
+| RVC-FR-015, RVC-CON-003, DR-005 | `MovementManager` 4초 회전 타이머 |
+| RVC-FR-038, DR-015 | `RvcController::stopMovementAndCleaning()`, cleaning OFF invariant |
+| RVC-FR-024, DR-016 | `RvcController::startForwardCleaning()`, `CleaningManager::enterNormal()` |
+| RVC-FR-039, RVC-CON-011, DR-017 | `CleaningManager::tick(MovementState)`의 dust polling |
+| RVC-FR-018, RVC-FR-019, DR-018 | `pendingPowerUp` 제거 |
+| RVC-CON-007, Analysis Boundary Confirmation | simulator 우측 값은 검증 관찰 데이터로만 유지 |
+
+## 13. Implementation Guidance for Next Stage
+
+Implementation 단계에서는 다음 순서로 수정하는 것이 안전하다.
+
+1. `Types.hpp`에서 우측 센서 snapshot과 회전 시간 상수를 정리한다.
+2. `Interfaces.hpp`에서 내부 측면 센서 인터페이스를 좌측 polling으로 축소한다.
+3. `CleaningManager`에서 pending POWER_UP을 제거하고 `tick(MovementState)` 설계로 변경한다.
+4. `MovementManager`의 기본 회전 시간을 4초로 변경한다.
+5. `RvcStates`에 `RightPathCheckState`, `ReturnFromRightCheckState`, revised `BackwardState` 흐름을 반영한다.
+6. `LeftPriorityAvoidanceStrategy`를 좌측 기반 결정으로 축소한다.
+7. 기존 regression test를 갱신하고, 우측 경로 확인 및 cleaning OFF invariant 테스트를 추가한다.
+
+## 14. Design Verification Checklist
+
+| 체크 항목 | 결과 |
+|---|---|
+| Analysis 단계에서 확정한 system boundary를 유지하는가? | 예 |
+| legacy architecture를 불필요하게 재작성하지 않는가? | 예 |
+| 내부 인터페이스에서 right sensor 의존을 제거했는가? | 예 |
+| 우측 경로 확인이 명시적인 state transition으로 표현되었는가? | 예 |
+| movement stop 시 cleaning OFF, forward 시작 시 NORMAL 규칙이 반영되었는가? | 예 |
+| dust sensor가 polling 방식으로 반영되었는가? | 예 |
+| 구현 가능한 class/interface 수준으로 구체화되었는가? | 예 |
