@@ -19,6 +19,10 @@ void CombinedFrontObstacleSensorAdapter::registerInterruptHandler(InterruptHandl
     handler_ = std::move(handler);
 }
 
+bool CombinedFrontObstacleSensorAdapter::isObstacleDetected() {
+    return sensor_.isFrontDetected();
+}
+
 void CombinedFrontObstacleSensorAdapter::triggerInterrupt() {
     if (handler_) {
         handler_();
@@ -36,8 +40,8 @@ bool CombinedSideObstacleSensorAdapter::initialize() {
 void CombinedSideObstacleSensorAdapter::shutdown() {
 }
 
-SideObstacleSnapshot CombinedSideObstacleSensorAdapter::read() {
-    return {.leftDetected = sensor_.isLeftDetected(), .rightDetected = sensor_.isRightDetected()};
+bool CombinedSideObstacleSensorAdapter::readLeft() {
+    return sensor_.isLeftDetected();
 }
 
 MovementMotorAdapter::MovementMotorAdapter(IMotor& motor) : motor_{motor} {

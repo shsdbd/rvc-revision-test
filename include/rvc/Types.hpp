@@ -30,9 +30,7 @@ enum class MovementCommand : std::uint8_t {
 
 enum class AvoidanceAction : std::uint8_t {
     TurnLeft,
-    TurnRight,
-    MoveBackward,
-    KeepBackward
+    CheckRightPath
 };
 
 enum class Direction : std::uint8_t {
@@ -49,12 +47,7 @@ enum class PowerLevel : std::uint8_t {
     POWER_UP
 };
 
-struct SideObstacleSnapshot {
-    bool leftDetected{false};
-    bool rightDetected{false};
-};
-
-inline constexpr std::chrono::milliseconds kDefaultTurnDuration{10000};
+inline constexpr std::chrono::milliseconds kDefaultTurnDuration{4000};
 inline constexpr std::chrono::milliseconds kDefaultPowerUpDuration{3000};
 
 } // namespace rvc

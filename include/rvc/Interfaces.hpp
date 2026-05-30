@@ -16,6 +16,7 @@ public:
     virtual bool initialize() = 0;
     virtual void shutdown() = 0;
     virtual void registerInterruptHandler(InterruptHandler handler) = 0;
+    virtual bool isObstacleDetected() = 0;
 };
 
 class ISideObstacleSensor {
@@ -24,7 +25,7 @@ public:
 
     virtual bool initialize() = 0;
     virtual void shutdown() = 0;
-    virtual SideObstacleSnapshot read() = 0;
+    virtual bool readLeft() = 0;
 };
 
 class IDustSensor {

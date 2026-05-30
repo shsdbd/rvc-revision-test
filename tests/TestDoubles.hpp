@@ -65,6 +65,11 @@ public:
         interruptHandler = std::move(handler);
     }
 
+    bool isObstacleDetected() override {
+        readCount += 1;
+        return obstacleDetected;
+    }
+
     void triggerInterrupt() {
         if (interruptHandler) {
             interruptHandler();
@@ -74,6 +79,8 @@ public:
     bool initialized{false};
     int initializeCount{0};
     int shutdownCount{0};
+    int readCount{0};
+    bool obstacleDetected{false};
     InterruptHandler interruptHandler;
 };
 
@@ -90,27 +97,27 @@ public:
         shutdownCount += 1;
     }
 
-    void setCurrentSnapshot(SideObstacleSnapshot snapshot) {
-        currentSnapshot = snapshot;
+    void setLeftDetected(bool detected) {
+        leftDetected = detected;
     }
 
-    SideObstacleSnapshot read() override {
+    bool readLeft() override {
         readCount += 1;
-        if (queuedSnapshots.empty()) {
-            return currentSnapshot;
+        if (queuedValues.empty()) {
+            return leftDetected;
         }
-        const SideObstacleSnapshot snapshot = queuedSnapshots.front();
-        queuedSnapshots.erase(queuedSnapshots.begin());
-        currentSnapshot = snapshot;
-        return snapshot;
+        const bool detected = queuedValues.front();
+        queuedValues.erase(queuedValues.begin());
+        leftDetected = detected;
+        return detected;
     }
 
     bool initialized{false};
     int initializeCount{0};
     int shutdownCount{0};
     int readCount{0};
-    SideObstacleSnapshot currentSnapshot{};
-    std::vector<SideObstacleSnapshot> queuedSnapshots;
+    bool leftDetected{false};
+    std::vector<bool> queuedValues;
 };
 
 class FakeDustSensor final : public IDustSensor {

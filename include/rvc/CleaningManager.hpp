@@ -25,13 +25,14 @@ public:
     void onDustDetected(MovementState movementState);
     void onMovementStateChanged(MovementState movementState);
     void tick();
+    void tick(MovementState movementState);
 
     [[nodiscard]] CleaningState currentState() const;
     [[nodiscard]] PowerLevel getPowerLevel() const;
     [[nodiscard]] bool getLatestDustDetected() const;
-    [[nodiscard]] bool pendingPowerUp() const;
 
 private:
+    void enterOff();
     void enterNormal();
     void enterPowerUp();
 
@@ -43,7 +44,6 @@ private:
     CleaningState currentState_{CleaningState::Off};
     PowerLevel powerLevel_{PowerLevel::OFF};
     bool latestDustDetected_{false};
-    bool pendingPowerUp_{false};
     std::chrono::milliseconds powerUpDuration_;
 };
 
