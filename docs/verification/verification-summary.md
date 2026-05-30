@@ -87,11 +87,12 @@ skip된 시나리오:
 
 | 파일 | Legacy 기대값 | Revised 기대값 |
 |---|---|---|
-| `simulator/scenarios/06_backward_avoidance.yaml` | `front+left+right` 조건에서 즉시 `BACKWARD` | `RIGHT -> LEFT -> BACKWARD` sequence |
+| `simulator/scenarios/06_backward_avoidance.yaml` | `front+left+right` 조건에서 즉시 `BACKWARD` | `RIGHT -> LEFT -> BACKWARD` sequence. longer dead-end corridor fixture로 강화 |
 
 수정 사유:
 
 오른쪽 센서가 제거되었으므로 controller는 더 이상 `front+left+right`를 직접 감지해 즉시 후진하지 않는다. 새 요구사항에 따라 `front+left` 감지 후 90도 우회전하여 전방 센싱으로 우측 경로를 확인하고, 막혀 있으면 90도 좌회전으로 원래 방향에 복귀한 뒤 1 tick 후진한다. 따라서 scenario 06의 pass/fail 기준을 새 회피 전략의 observable motor sequence로 갱신했다.
+거기에 더해 후진해야 할 경로의 길이가 1 tick 보다 길 때도 새 회피 전략이 잘 유지되는지 확인하기 위해 longer dead-end corridor 환경을 만들었다.
 
 ## 6. Static Analysis
 
