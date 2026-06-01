@@ -9,9 +9,9 @@
 ```plantuml
 @startuml
 actor "사용자" as User
-actor "전방 센서 하드웨어" as Front
-actor "측면 센서 하드웨어\n(좌측 polling)" as Side
-actor "먼지 센서 하드웨어" as Dust
+actor "전방 센서" as Front
+actor "측면 센서\n(좌측 polling)" as Side
+actor "먼지 센서" as Dust
 participant "rvc-controller" as RVC
 actor "Movement Motor" as Move
 actor "Cleaning Motor" as Clean
@@ -31,9 +31,9 @@ RVC -> Move : 전진 명령
 ```plantuml
 @startuml
 actor "사용자" as User
-actor "전방 센서 하드웨어" as Front
-actor "측면 센서 하드웨어\n(좌측 polling)" as Side
-actor "먼지 센서 하드웨어" as Dust
+actor "전방 센서" as Front
+actor "측면 센서\n(좌측 polling)" as Side
+actor "먼지 센서" as Dust
 participant "rvc-controller" as RVC
 actor "Movement Motor" as Move
 actor "Cleaning Motor" as Clean
@@ -53,8 +53,8 @@ RVC -> RVC : OFF 상태로 전환
 
 ```plantuml
 @startuml
-actor "전방 센서 하드웨어" as Front
-actor "측면 센서 하드웨어\n(좌측 polling)" as Side
+actor "전방 센서" as Front
+actor "측면 센서\n(좌측 polling)" as Side
 participant "rvc-controller" as RVC
 actor "Movement Motor" as Move
 actor "Cleaning Motor" as Clean
@@ -93,8 +93,8 @@ end
 
 ```plantuml
 @startuml
-actor "전방 센서 하드웨어" as Front
-actor "측면 센서 하드웨어\n(좌측 polling)" as Side
+actor "전방 센서" as Front
+actor "측면 센서\n(좌측 polling)" as Side
 participant "rvc-controller" as RVC
 actor "Movement Motor" as Move
 actor "Cleaning Motor" as Clean
@@ -140,7 +140,7 @@ end note
 
 ```plantuml
 @startuml
-actor "먼지 센서 하드웨어" as Dust
+actor "먼지 센서" as Dust
 participant "rvc-controller" as RVC
 actor "Cleaning Motor" as Clean
 

@@ -24,6 +24,7 @@
 
 ### Design
 - design-specification.md 를 수정. 
+- sequence-diagram.md 를 생성해 다이어그램을 분리.
 
 ### Implementation
 - PR#3의 코드들과 PR#5의 system test case 1 개 수정. PR#5의 내용은 6번 시나리오에 벽을 연장한 것인데, 시나리오를 기존 플젝과 똑같이 가져가려 한다면 되돌려도 무방함.

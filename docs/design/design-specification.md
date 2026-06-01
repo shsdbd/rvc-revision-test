@@ -397,113 +397,7 @@ CleaningOff --> CleaningOff : tick while non-forward /\nno pending POWER_UP
 | Dust polling | `Forward` tick에서 먼지 센서를 polling한다. |
 | Pending 제거 | 정지/회전/후진 중 먼지 값은 이후 POWER_UP 조건으로 저장하지 않는다. |
 
-## 10. Key Interaction Design
-
-### 10.1 전방+좌측 장애물 후 우측 경로 확인
-
-```plantuml
-@startuml
-participant "RvcController" as RVC
-participant "ISideObstacleSensor" as Side
-participant "IFrontObstacleSensor" as Front
-participant "MovementManager" as Move
-participant "CleaningManager" as Clean
-
-RVC -> Move : stop()
-RVC -> Clean : enterOff()
-RVC -> Side : readLeft()
-Side --> RVC : true
-RVC -> Move : turnRight()
-RVC -> Move : isTurnComplete()
-Move --> RVC : true after 4s
-RVC -> Front : isObstacleDetected()
-Front --> RVC : frontBlocked
-
-alt frontBlocked == false
-    RVC -> Clean : enterNormal()
-    RVC -> Move : moveForward()
-else frontBlocked == true
-    RVC -> Move : turnLeft()
-    RVC -> Move : isTurnComplete()
-    Move --> RVC : true after 4s
-    RVC -> RVC : changeState(BackwardState)
-end
-@enduml
-```
-
-### 10.2 삼방향 장애물 반복 처리
-
-```plantuml
-@startuml
-participant "RvcController" as RVC
-participant "ISideObstacleSensor" as Side
-participant "IFrontObstacleSensor" as Front
-participant "MovementManager" as Move
-participant "CleaningManager" as Clean
-
-RVC -> Clean : enterOff()
-
-loop until left clear or right path clear
-    RVC -> Move : moveBackward()
-    RVC -> RVC : wait 1 tick
-    RVC -> Move : stop()
-    RVC -> Clean : enterOff()
-    RVC -> Side : readLeft()
-    Side --> RVC : leftDetected
-
-    alt leftDetected == false
-        RVC -> Move : turnLeft()
-        RVC -> Move : isTurnComplete()
-        Move --> RVC : true after 4s
-        RVC -> Clean : enterNormal()
-        RVC -> Move : moveForward()
-    else leftDetected == true
-        RVC -> Move : turnRight()
-        RVC -> Move : isTurnComplete()
-        Move --> RVC : true after 4s
-        RVC -> Front : isObstacleDetected()
-        Front --> RVC : frontBlocked
-        alt frontBlocked == false
-            RVC -> Clean : enterNormal()
-            RVC -> Move : moveForward()
-        else frontBlocked == true
-            RVC -> Move : turnLeft()
-            RVC -> Move : isTurnComplete()
-            Move --> RVC : true after 4s
-        end
-    end
-end
-@enduml
-```
-
-### 10.3 Dust Polling
-
-```plantuml
-@startuml
-participant "RvcController" as RVC
-participant "MovementManager" as Move
-participant "CleaningManager" as Clean
-participant "IDustSensor" as Dust
-
-RVC -> Move : currentState()
-Move --> RVC : movementState
-RVC -> Clean : tick(movementState)
-
-alt movementState == Forward
-    Clean -> Dust : isDustDetected()
-    Dust --> Clean : dustDetected
-    alt dustDetected
-        Clean -> Clean : enterPowerUp()
-    else no dust and power-up timer expired
-        Clean -> Clean : enterNormal()
-    end
-else movementState != Forward
-    Clean -> Clean : enterOff()
-end
-@enduml
-```
-
-## 11. Dependency Analysis
+## 10. Dependency Analysis
 
 | 의존성 | 설계 판단 |
 |---|---|
@@ -516,7 +410,7 @@ end
 
 이 구조는 manager 간 순환 의존을 만들지 않는다.
 
-## 12. Requirements to Design Traceability
+## 11. Requirements to Design Traceability
 
 | 요구사항/분석 규칙 | 설계 요소 |
 |---|---|
@@ -531,7 +425,7 @@ end
 | RVC-FR-018, RVC-FR-019, DR-018 | `pendingPowerUp` 제거 |
 | RVC-CON-007, Analysis Boundary Confirmation | simulator 우측 값은 검증 관찰 데이터로만 유지 |
 
-## 13. Implementation Guidance for Next Stage
+## 12. Implementation Guidance for Next Stage
 
 Implementation 단계에서는 다음 순서로 수정하는 것이 안전하다.
 
@@ -543,7 +437,7 @@ Implementation 단계에서는 다음 순서로 수정하는 것이 안전하다
 6. `LeftPriorityAvoidanceStrategy`를 좌측 기반 결정으로 축소한다.
 7. 기존 regression test를 갱신하고, 우측 경로 확인 및 cleaning OFF invariant 테스트를 추가한다.
 
-## 14. Design Verification Checklist
+## 13. Design Verification Checklist
 
 | 체크 항목 | 결과 |
 |---|---|
