@@ -174,11 +174,13 @@ class SimulationRunner:
     def _dispatch_pre_tick_events(self, tick: int) -> None:
         """Fire events scheduled before controller.tick() polls sensors.
 
-        - sub_phase=before_poll: calls onInterrupt() to mirror real ISR behavior.
+        - sub_phase=before_poll: arms force_front so the next isFrontDetected()
+          returns True, then calls onInterrupt() to mirror real ISR behavior.
         - dust override: pushes the value at the head of the override queue.
         """
         for ev in self._interrupts_by_tick.get(tick, []):
             if ev.sub_phase == "before_poll":
+                self.obs_sensor.arm_front_interrupt()
                 self.obs_sub.onInterrupt()
         for ev in self._dust_override_by_tick.get(tick, []):
             self.dust_sensor.override_sequence.append(ev.value)
@@ -186,6 +188,7 @@ class SimulationRunner:
     def _dispatch_post_tick_events(self, tick: int) -> None:
         for ev in self._interrupts_by_tick.get(tick, []):
             if ev.sub_phase == "after_poll":
+                self.obs_sensor.arm_front_interrupt()
                 self.obs_sub.onInterrupt()
 
     def run(self) -> RunResult:

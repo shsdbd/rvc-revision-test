@@ -3,6 +3,8 @@
 namespace rvc {
 namespace {
 
+inline constexpr int kMaxSynchronousEscapeChecks{16};
+
 class OffState final : public IRvcState {
 public:
     void startCleaning(RvcController& context) override {
@@ -45,11 +47,37 @@ public:
             context.avoidanceStrategy().decideAfterFrontObstacle(leftDetected);
 
         if (action == AvoidanceAction::CheckRightPath) {
-            context.changeState(makeRightPathCheckState());
-            return;
+            context.movementManager().turnRight();
+        } else {
+            context.movementManager().turnLeft();
         }
 
-        context.changeState(makeTurningState(AvoidanceAction::TurnLeft));
+        bool frontBlocked = context.frontSensor().isObstacleDetected();
+        if (frontBlocked) {
+            if (action != AvoidanceAction::TurnLeft) {
+                context.movementManager().turnLeft();
+            }
+            context.movementManager().moveBackward();
+
+            for (int i = 0; i < kMaxSynchronousEscapeChecks; ++i) {
+                if (!context.sideSensor().readLeft()) {
+                    context.movementManager().turnLeft();
+                    break;
+                }
+
+                context.movementManager().turnRight();
+                frontBlocked = context.frontSensor().isObstacleDetected();
+                if (frontBlocked) {
+                    context.movementManager().turnLeft();
+                    continue;
+                }
+
+                break;
+            }
+        }
+
+        context.startForwardCleaning();
+        context.changeState(makeForwardState());
     }
 
     [[nodiscard]] MovementState movementState() const override {

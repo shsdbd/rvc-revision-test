@@ -33,7 +33,7 @@ void ObstacleSensorSubject::poll() {
 }
 
 void ObstacleSensorSubject::onInterrupt() {
-    front_ = true;
+    front_ = sensor_.isFrontDetected();
     left_ = sensor_.isLeftDetected();
     right_ = sensor_.isRightDetected();
     notify();

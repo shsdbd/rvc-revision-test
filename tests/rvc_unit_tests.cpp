@@ -9,6 +9,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include "TestDoubles.hpp"
 
 using namespace rvc;
@@ -569,6 +571,7 @@ TEST(SensorSubjectsTest, NotifyOnlyFrontObstacleAndAlwaysPublishDustPolling) {
 
 TEST(SensorSubjectsTest, HandlesInterruptDetachNullObserverAndDustState) {
     FakeObstacleSensor obstacleSensor;
+    obstacleSensor.frontDetected = true;
     obstacleSensor.leftDetected = false;
     obstacleSensor.rightDetected = true;
     ObstacleSensorSubject obstacleSubject{obstacleSensor};
@@ -766,14 +769,13 @@ TEST(RvcControllerTest, FrontObstacleOnlyTurnsLeftThenMovesForward) {
     controller.startCleaning();
     sideSensor.setLeftDetected(false);
     frontSensor.triggerInterrupt();
-    EXPECT_EQ(controller.movementState(), MovementState::TurningLeft);
-    EXPECT_EQ(movement.currentCommand(), MovementCommand::TurnLeft);
-    EXPECT_EQ(cleaning.currentState(), CleaningState::Off);
-
-    turnTimer.expire();
-    controller.tick();
     EXPECT_EQ(controller.movementState(), MovementState::Forward);
     EXPECT_EQ(movement.currentCommand(), MovementCommand::Forward);
+    EXPECT_EQ(cleaning.currentState(), CleaningState::Normal);
+    ASSERT_GE(movementMotor.commands.size(), 4U);
+    EXPECT_EQ(movementMotor.commands[1], MovementCommand::Stop);
+    EXPECT_EQ(movementMotor.commands[2], MovementCommand::TurnLeft);
+    EXPECT_EQ(movementMotor.commands[3], MovementCommand::Forward);
 }
 
 TEST(RvcControllerTest, FrontAndLeftObstacleTurnsRightThenMovesForward) {
@@ -793,17 +795,12 @@ TEST(RvcControllerTest, FrontAndLeftObstacleTurnsRightThenMovesForward) {
     sideSensor.setLeftDetected(true);
     frontSensor.obstacleDetected = false;
     frontSensor.triggerInterrupt();
-    EXPECT_EQ(controller.movementState(), MovementState::TurningRight);
-    EXPECT_EQ(movement.currentCommand(), MovementCommand::TurnRight);
-
-    controller.tick();
-    EXPECT_EQ(controller.movementState(), MovementState::TurningRight);
-    EXPECT_EQ(movement.currentCommand(), MovementCommand::TurnRight);
-
-    turnTimer.expire();
-    controller.tick();
     EXPECT_EQ(controller.movementState(), MovementState::Forward);
     EXPECT_EQ(movement.currentCommand(), MovementCommand::Forward);
+    ASSERT_GE(movementMotor.commands.size(), 4U);
+    EXPECT_EQ(movementMotor.commands[1], MovementCommand::Stop);
+    EXPECT_EQ(movementMotor.commands[2], MovementCommand::TurnRight);
+    EXPECT_EQ(movementMotor.commands[3], MovementCommand::Forward);
 }
 
 TEST(RvcControllerTest, BlockedRightPathReturnsToOriginalDirectionThenBacksUp) {
@@ -820,25 +817,17 @@ TEST(RvcControllerTest, BlockedRightPathReturnsToOriginalDirectionThenBacksUp) {
     RvcController controller{frontSensor, sideSensor, dustSensor, movement, cleaning, strategy};
 
     controller.startCleaning();
-    sideSensor.setLeftDetected(true);
+    sideSensor.queuedValues = {true, false};
     frontSensor.obstacleDetected = true;
     frontSensor.triggerInterrupt();
-    EXPECT_EQ(controller.movementState(), MovementState::TurningRight);
-
-    turnTimer.expire();
-    controller.tick();
-    EXPECT_EQ(controller.movementState(), MovementState::TurningLeft);
-    EXPECT_EQ(movement.currentCommand(), MovementCommand::TurnLeft);
-
-    turnTimer.expire();
-    controller.tick();
-    EXPECT_EQ(controller.movementState(), MovementState::Backward);
-    EXPECT_EQ(movement.currentCommand(), MovementCommand::Backward);
-
-    sideSensor.setLeftDetected(false);
-    controller.tick();
-    EXPECT_EQ(controller.movementState(), MovementState::TurningLeft);
-    EXPECT_EQ(movement.currentCommand(), MovementCommand::TurnLeft);
+    EXPECT_EQ(controller.movementState(), MovementState::Forward);
+    EXPECT_EQ(movement.currentCommand(), MovementCommand::Forward);
+    ASSERT_GE(movementMotor.commands.size(), 7U);
+    EXPECT_EQ(movementMotor.commands[2], MovementCommand::TurnRight);
+    EXPECT_EQ(movementMotor.commands[3], MovementCommand::TurnLeft);
+    EXPECT_EQ(movementMotor.commands[4], MovementCommand::Backward);
+    EXPECT_EQ(movementMotor.commands[5], MovementCommand::TurnLeft);
+    EXPECT_EQ(movementMotor.commands[6], MovementCommand::Forward);
 }
 
 TEST(RvcControllerTest, BaseStateDefaultsAndFactoryStatesAreSafe) {
@@ -861,7 +850,7 @@ TEST(RvcControllerTest, BaseStateDefaultsAndFactoryStatesAreSafe) {
     EXPECT_EQ(cleaning.currentState(), CleaningState::Off);
 
     controller.changeState(makeStoppedForObstacleState());
-    EXPECT_EQ(controller.movementState(), MovementState::TurningLeft);
+    EXPECT_EQ(controller.movementState(), MovementState::Forward);
 
     controller.changeState(makeRightPathCheckState());
     EXPECT_EQ(controller.movementState(), MovementState::TurningRight);
@@ -900,27 +889,15 @@ TEST(RvcControllerTest, MockBasedObstacleEscapeScenarioIsCoveredByUnitTestOnly) 
     EXPECT_EQ(cleaning.currentState(), CleaningState::PowerUp);
 
     frontSensor.obstacleDetected = true;
+    sideSensor.queuedValues = {true, false};
     frontSensor.triggerInterrupt();
-    EXPECT_EQ(controller.movementState(), MovementState::TurningRight);
-    EXPECT_EQ(cleaning.currentState(), CleaningState::Off);
-
-    turnTimer.expire();
-    controller.tick();
-    EXPECT_EQ(controller.movementState(), MovementState::TurningLeft);
-
-    turnTimer.expire();
-    controller.tick();
-    EXPECT_EQ(controller.movementState(), MovementState::Backward);
-
-    sideSensor.setLeftDetected(false);
     dustSensor.setDustDetected(false);
-    controller.tick();
-    EXPECT_EQ(controller.movementState(), MovementState::TurningLeft);
-
-    turnTimer.expire();
-    controller.tick();
     EXPECT_EQ(controller.movementState(), MovementState::Forward);
     EXPECT_EQ(cleaning.currentState(), CleaningState::Normal);
+    ASSERT_GE(movementMotor.commands.size(), 7U);
+    EXPECT_EQ(movementMotor.commands[2], MovementCommand::TurnRight);
+    EXPECT_EQ(movementMotor.commands[3], MovementCommand::TurnLeft);
+    EXPECT_EQ(movementMotor.commands[4], MovementCommand::Backward);
 }
 
 TEST(SimulatorRVCControllerAdapterTest, PowerOnInitializesDevicesAndStartsCoreController) {
@@ -990,8 +967,9 @@ TEST(SimulatorRVCControllerAdapterTest, TickPowerOffAndNonDetectedEventsRemainSa
     obstacleSensor.leftDetected = false;
     obstacleSensor.rightDetected = true;
     obstacleSubject.onInterrupt();
-    EXPECT_EQ(current_state_name(controller), "Avoiding");
-    EXPECT_EQ(motor.lastCommand(), Direction::LEFT);
+    EXPECT_EQ(current_state_name(controller), "Cleaning");
+    EXPECT_NE(std::find(motor.commands.begin(), motor.commands.end(), Direction::LEFT),
+              motor.commands.end());
 
     controller.powerOff();
     EXPECT_EQ(current_state_name(controller), "Off");
